@@ -1,0 +1,16 @@
+﻿[Unit]
+Description=LUMO Smart Companion Server (Raspberry Pi 5)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/lumo_pi_system/rpi_server
+ExecStart=/home/pi/lumo_pi_system/rpi_server/venv/bin/python main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

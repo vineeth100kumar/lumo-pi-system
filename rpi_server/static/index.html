@@ -1,0 +1,382 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>LUMO Smart Companion</title>
+  <style>
+    :root {
+      --bg: #090a0f;
+      --card: rgba(25, 28, 38, 0.7);
+      --card-border: rgba(255, 255, 255, 0.09);
+      --accent: #0a84ff;
+      --green: #30d158;
+      --warm: #ff9f0a;
+      --red: #ff453a;
+      --text: #ffffff;
+      --muted: #8e8e93;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px 80px 16px;
+      min-height: 100vh;
+      background-image: radial-gradient(circle at 50% 0%, rgba(10, 132, 255, 0.12) 0%, transparent 60%);
+    }
+    .container { width: 100%; max-width: 440px; }
+    
+    /* Header */
+    .header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 24px; padding: 6px 4px;
+    }
+    .header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
+    .dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .dot.offline { background: var(--red); }
+
+    /* Glass Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 20px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 0.95rem; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+
+    /* Clock Hero */
+    .clock-hero { text-align: center; margin: 10px 0 20px 0; }
+    .clock-time { font-size: 3.6rem; font-weight: 200; letter-spacing: -1.5px; line-height: 1; }
+    .clock-sub { color: var(--muted); font-size: 0.95rem; margin-top: 8px; font-weight: 500; }
+
+    /* Buttons & Controls */
+    button {
+      background: rgba(255,255,255,0.08); border: 1px solid var(--card-border);
+      color: var(--text); border-radius: 12px; padding: 10px 16px;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    button:active { transform: scale(0.97); }
+    button.primary { background: var(--accent); border: none; }
+    button.danger { background: var(--red); border: none; }
+    button.warm { background: var(--warm); border: none; color: #000; }
+
+    .btn-group { display: flex; gap: 8px; width: 100%; }
+    .btn-group button { flex: 1; text-align: center; padding: 12px 6px; }
+
+    /* Sliders */
+    .slider-row { margin: 14px 0 6px 0; }
+    .slider-label { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+    input[type=range] {
+      width: 100%; -webkit-appearance: none; background: rgba(255,255,255,0.12);
+      height: 8px; border-radius: 4px; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+      background: #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer;
+    }
+
+    /* Lists (Alarms & Tasks) */
+    .list-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .list-item:last-child { border-bottom: none; }
+    .item-left { display: flex; flex-direction: column; gap: 2px; }
+    .item-time { font-size: 1.3rem; font-weight: 600; }
+    .item-label { font-size: 0.85rem; color: var(--muted); }
+
+    .toggle-switch {
+      position: relative; width: 48px; height: 28px;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider-toggle {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255,255,255,0.15); transition: .3s; border-radius: 28px;
+    }
+    .slider-toggle:before {
+      position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px;
+      background-color: white; transition: .3s; border-radius: 50%;
+    }
+    input:checked + .slider-toggle { background-color: var(--green); }
+    input:checked + .slider-toggle:before { transform: translateX(20px); }
+
+    .add-row { display: flex; gap: 8px; margin-top: 14px; }
+    .add-row input {
+      flex: 1; background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
+      border-radius: 12px; padding: 10px 14px; color: #fff; font-size: 0.95rem; outline: none;
+    }
+
+    /* Alarm Ringing Banner */
+    #alarmBanner {
+      display: none; background: var(--red); padding: 16px; border-radius: 16px;
+      margin-bottom: 16px; text-align: center; animation: pulse 1s infinite alternate;
+    }
+    @keyframes pulse { from { opacity: 0.8; } to { opacity: 1.0; } }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <h1>LUMO Control</h1>
+    <div class="badge" id="statusBadge">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Connecting...</span>
+    </div>
+  </div>
+
+  <!-- Alarm Ringing Banner -->
+  <div id="alarmBanner">
+    <h2 style="font-size:1.3rem; margin-bottom: 8px;">ALARM RINGING!</h2>
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button onclick="dismissAlarm()" class="primary" style="background:#fff; color:#000;">Dismiss</button>
+      <button onclick="snoozeAlarm()" style="background:rgba(0,0,0,0.3);">Snooze 5m</button>
+    </div>
+  </div>
+
+  <!-- Clock & Weather Hero -->
+  <div class="clock-hero">
+    <div class="clock-time" id="clockTime">--:--</div>
+    <div class="clock-sub" id="clockSub">--</div>
+  </div>
+
+  <!-- Ambient Light Card -->
+  <div class="card">
+    <div class="card-title">Ambient Lighting</div>
+    <div class="btn-group">
+      <button onclick="setLightMode('WARM')" id="btnWarm" class="warm">Warm</button>
+      <button onclick="setLightMode('COLOR')" id="btnColor">Color</button>
+      <button onclick="setLightMode('BREATHE')" id="btnBreathe">Breathe</button>
+      <button onclick="setLightMode('OFF')" id="btnOff">Off</button>
+    </div>
+
+    <div class="slider-row">
+      <div class="slider-label"><span>Brightness</span><span id="briVal">40%</span></div>
+      <input type="range" id="briSlider" min="5" max="100" value="40" oninput="onLightSliderChange()">
+    </div>
+
+    <div class="slider-row" id="hueRow" style="display:none;">
+      <div class="slider-label"><span>Color Hue</span><span id="hueVal">0°</span></div>
+      <input type="range" id="hueSlider" min="0" max="360" value="0" oninput="onLightSliderChange()">
+    </div>
+  </div>
+
+  <!-- Music Remote Card -->
+  <div class="card">
+    <div class="card-title">Music Remote</div>
+    <div style="text-align:center; margin-bottom: 14px;">
+      <div id="spTitle" style="font-size:1.1rem; font-weight:600;">No Track Playing</div>
+      <div id="spArtist" style="font-size:0.85rem; color:var(--muted); margin-top:3px;">Idle</div>
+    </div>
+    <div class="btn-group">
+      <button onclick="postApi('/api/spotify/prev')">Prev</button>
+      <button onclick="postApi('/api/spotify/toggle')" class="primary">Play / Pause</button>
+      <button onclick="postApi('/api/spotify/next')">Next</button>
+    </div>
+  </div>
+
+  <!-- Alarms Card -->
+  <div class="card">
+    <div class="card-title">Alarms</div>
+    <div id="alarmList"></div>
+
+    <div class="add-row">
+      <input type="time" id="newAlarmTime" value="07:30" style="max-width:110px;">
+      <input type="text" id="newAlarmLabel" placeholder="Label (optional)">
+      <button onclick="addAlarm()" class="primary">Add</button>
+    </div>
+  </div>
+
+  <!-- Tasks Card -->
+  <div class="card">
+    <div class="card-title">Tasks (Top 5 on Screen)</div>
+    <div id="taskList"></div>
+
+    <div class="add-row">
+      <input type="text" id="newTaskText" placeholder="Enter new task...">
+      <button onclick="addTask()" class="primary">Add</button>
+    </div>
+  </div>
+
+  <!-- Emotion / Haptic Controls -->
+  <div class="card">
+    <div class="card-title">Companion Personality</div>
+    <div class="btn-group" style="margin-bottom:10px;">
+      <button onclick="setEmotion('HAPPY')">Happy</button>
+      <button onclick="setEmotion('EXCITED')">Excited</button>
+      <button onclick="setEmotion('BORED')">Bored</button>
+      <button onclick="setEmotion('NORMAL')">Normal</button>
+    </div>
+    <button onclick="postApi('/api/haptic?ms=70')" style="width:100%;">Test Haptic Motor</button>
+  </div>
+</div>
+
+<script>
+  let currentLightMode = "WARM";
+
+  async function fetchStatus() {
+    try {
+      const res = await fetch("/api/status");
+      const data = await res.json();
+
+      const dot = document.getElementById("statusDot");
+      const txt = document.getElementById("statusText");
+      if (data.esp32_connected) {
+        dot.className = "dot online";
+        txt.textContent = "ESP32 Online";
+      } else {
+        dot.className = "dot offline";
+        txt.textContent = "ESP32 Offline";
+      }
+
+      document.getElementById("clockTime").textContent = data.time || "--:--";
+      document.getElementById("clockSub").textContent = `${data.date} • ${data.temp_c}°C ${data.weather_icon}`;
+
+      const banner = document.getElementById("alarmBanner");
+      banner.style.display = data.alarm_ringing ? "block" : "none";
+    } catch(e) {}
+  }
+
+  async function fetchAlarms() {
+    try {
+      const res = await fetch("/api/alarms");
+      const alarms = await res.json();
+      const list = document.getElementById("alarmList");
+      list.innerHTML = "";
+
+      alarms.forEach(a => {
+        const item = document.createElement("div");
+        item.className = "list-item";
+        item.innerHTML = `
+          <div class="item-left">
+            <div class="item-time">${String(a.h).padStart(2,'0')}:${String(a.m).padStart(2,'0')}</div>
+            <div class="item-label">${a.label || 'Alarm'}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <label class="toggle-switch">
+              <input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="toggleAlarm(${a.id})">
+              <span class="slider-toggle"></span>
+            </label>
+            <button onclick="deleteAlarm(${a.id})" style="padding:6px 10px; color:var(--red);">X</button>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    } catch(e) {}
+  }
+
+  async function fetchTasks() {
+    try {
+      const res = await fetch("/api/tasks");
+      const data = await res.json();
+      const list = document.getElementById("taskList");
+      list.innerHTML = "";
+
+      data.tasks.forEach((t, i) => {
+        const item = document.createElement("div");
+        item.className = "list-item";
+        item.innerHTML = `
+          <div style="display:flex; align-items:center; gap:10px;">
+            <input type="checkbox" onclick="deleteTask(${i})" style="width:18px; height:18px; cursor:pointer;">
+            <span>${t}</span>
+          </div>
+          <button onclick="deleteTask(${i})" style="padding:4px 8px; font-size:0.8rem;">Del</button>
+        `;
+        list.appendChild(item);
+      });
+    } catch(e) {}
+  }
+
+  async function postApi(url, body=null) {
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : null
+    });
+  }
+
+  function setLightMode(mode) {
+    currentLightMode = mode;
+    document.getElementById("hueRow").style.display = (mode === 'COLOR') ? "block" : "none";
+    sendLightState();
+  }
+
+  function onLightSliderChange() {
+    const bri = document.getElementById("briSlider").value;
+    const hue = document.getElementById("hueSlider").value;
+    document.getElementById("briVal").textContent = `${bri}%`;
+    document.getElementById("hueVal").textContent = `${hue}°`;
+    sendLightState();
+  }
+
+  function sendLightState() {
+    const bri = parseInt(document.getElementById("briSlider").value);
+    const hue = parseInt(document.getElementById("hueSlider").value);
+    postApi("/api/lights", { mode: currentLightMode, brightness: bri, hue: hue });
+  }
+
+  async function addAlarm() {
+    const timeVal = document.getElementById("newAlarmTime").value;
+    const label = document.getElementById("newAlarmLabel").value;
+    if (!timeVal) return;
+    const [h, m] = timeVal.split(":").map(Number);
+    await postApi("/api/alarms", { h, m, label });
+    document.getElementById("newAlarmLabel").value = "";
+    fetchAlarms();
+  }
+
+  async function deleteAlarm(id) {
+    await fetch(`/api/alarms/${id}`, { method: "DELETE" });
+    fetchAlarms();
+  }
+
+  async function toggleAlarm(id) {
+    await postApi(`/api/alarms/${id}/toggle`);
+    fetchAlarms();
+  }
+
+  async function snoozeAlarm() { await postApi("/api/alarms/snooze"); fetchStatus(); }
+  async function dismissAlarm() { await postApi("/api/alarms/dismiss"); fetchStatus(); }
+
+  async function addTask() {
+    const input = document.getElementById("newTaskText");
+    const text = input.value.trim();
+    if (!text) return;
+    await postApi("/api/tasks", { text });
+    input.value = "";
+    fetchTasks();
+  }
+
+  async function deleteTask(index) {
+    await fetch(`/api/tasks/${index}`, { method: "DELETE" });
+    fetchTasks();
+  }
+
+  function setEmotion(mood) { postApi("/api/emotion", { mood }); }
+
+  // Initial polls
+  fetchStatus();
+  fetchAlarms();
+  fetchTasks();
+  setInterval(fetchStatus, 2500);
+</script>
+</body>
+</html>
