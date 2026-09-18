@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import logging
 import socket
 import datetime
@@ -34,23 +34,34 @@ scheduler = AsyncIOScheduler()
 tz = pytz.timezone("Asia/Kolkata")
 
 # ===================== MDNS =====================
+def get_local_ips():
+    ips = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        primary = s.getsockname()[0]
+        s.close()
+        if primary and not primary.startswith("127."):
+            ips.append(primary)
+    except Exception:
+        pass
+    return ips if ips else ["127.0.0.1"]
+
 async def start_mdns():
     zc = AsyncZeroconf()
-    try:
-        host_ip = socket.gethostbyname(socket.gethostname())
-    except Exception:
-        host_ip = "127.0.0.1"
+    local_ips = get_local_ips()
+    host_ip = local_ips[0]
 
     info = AsyncServiceInfo(
         "_http._tcp.local.",
         f"{MDNS_NAME}._http._tcp.local.",
-        addresses=[socket.inet_aton(host_ip)],
+        addresses=[socket.inet_aton(ip) for ip in local_ips],
         port=HTTP_PORT,
         properties={"path": "/"},
         server=f"{MDNS_NAME}.local.",
     )
     await zc.async_register_service(info)
-    logger.info(f"mDNS registered: {MDNS_NAME}.local on {host_ip}")
+    logger.info(f"mDNS registered: {MDNS_NAME}.local on {local_ips}")
     return zc
 
 # ===================== CLOCK BROADCAST =====================
