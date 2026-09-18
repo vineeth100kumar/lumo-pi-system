@@ -1,21 +1,20 @@
-﻿#include "peripherals.h"
+#include <Arduino.h>
+#include "peripherals.h"
 #include <math.h>
-#include "esp32-hal-ledc.h"
 
 Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-// ===================== HAPTICS (ACTIVE LOW) =====================
 static unsigned long hapticEndTime = 0;
 static bool hapticActive = false;
 
 void hapticPulse(uint16_t ms) {
-  ledcWrite(BUZZER_PIN, 5); // ~98% duty cycle active-low = ON
+  ledcWrite(BUZZER_PIN, 5);
   hapticEndTime = millis() + ms;
   hapticActive = true;
 }
 
 void hapticOff() {
-  ledcWrite(BUZZER_PIN, 255); // 100% high = OFF (active-low)
+  ledcWrite(BUZZER_PIN, 255);
   hapticActive = false;
 }
 
@@ -25,7 +24,6 @@ void hapticUpdate() {
   }
 }
 
-// ===================== NEOPIXELS =====================
 void initNeoPixels() {
   pixels.begin();
   pixels.setBrightness(40);
@@ -43,7 +41,6 @@ void applyNeoPixels(NeoMode mode, uint8_t brightness, uint16_t hue) {
   }
 
   if (mode == NEO_WARM) {
-    // Warm Amber: 255, 140, 40
     for (int i = 0; i < NUMPIXELS; i++) {
       pixels.setPixelColor(i, pixels.Color(255, 140, 40));
     }
@@ -90,7 +87,6 @@ void neoClear() {
   pixels.show();
 }
 
-// ===================== BUTTON LADDER =====================
 Button readButton() {
   static Button lastStable = BTN_NONE;
   static unsigned long pressStart = 0;
@@ -121,7 +117,6 @@ Button readButton() {
     return BTN_NONE;
   }
 
-  // Hold-to-repeat for UP and DOWN navigation
   if ((cur == BTN_UP || cur == BTN_DOWN) && cur == lastStable) {
     unsigned long now = millis();
     if (now - pressStart > HOLD_START_MS && now - lastRepeat > HOLD_REPEAT_MS) {

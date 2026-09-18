@@ -1,6 +1,7 @@
-﻿#pragma once
-#include "config.h"
+#pragma once
+#include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include "config.h"
 
 extern Adafruit_NeoPixel pixels;
 

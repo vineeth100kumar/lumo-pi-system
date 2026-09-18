@@ -1,4 +1,5 @@
-﻿#include "ws_client.h"
+#include <Arduino.h>
+#include "ws_client.h"
 #include "peripherals.h"
 #include "animator.h"
 #include "display.h"
@@ -16,6 +17,12 @@ static bool isConnected = false;
 
 static unsigned long lastReconnectAttempt = 0;
 static unsigned long backoffMs = 2000;
+
+void wsSend(const char* json) {
+  if (isConnected) {
+    ws.send(json);
+  }
+}
 
 static void handleTextMessage(const String& payload) {
   if (!statePtr) return;
@@ -77,7 +84,7 @@ static void handleTextMessage(const String& payload) {
     animatorSetMood(m, sc);
 
     if (m == MOOD_EXCITED) {
-      applyNeoPixels(NEO_COLOR, 80, 45); // Golden glow
+      applyNeoPixels(NEO_COLOR, 80, 45);
     }
   }
   else if (strcmp(cmd, "LIGHTS") == 0) {
@@ -147,18 +154,22 @@ void wsInit(LumoState& state) {
 void wsConnect() {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  Serial.println("[WS] Resolving Pi via mDNS (" PI_HOSTNAME ")...");
   IPAddress piIP;
-  int n = MDNS.queryHost(PI_HOSTNAME);
-  if (n > 0) {
-    piIP = MDNS.IP(0);
-    Serial.printf("[WS] Found Pi at %s\n", piIP.toString().c_str());
+  if (piIP.fromString(PI_HOSTNAME)) {
+    Serial.printf("[WS] Direct IP configured: %s\n", piIP.toString().c_str());
   } else {
-    Serial.println("[WS] mDNS query failed. Trying direct host...");
-    WiFi.hostByName(PI_HOSTNAME, piIP);
+    Serial.println("[WS] Resolving Pi via mDNS (" PI_HOSTNAME ")...");
+    piIP = MDNS.queryHost(PI_HOSTNAME);
+    if (piIP != INADDR_NONE && piIP != IPAddress(0,0,0,0)) {
+      Serial.printf("[WS] Found Pi at %s\n", piIP.toString().c_str());
+    } else {
+      Serial.println("[WS] mDNS query failed. Trying direct host...");
+      WiFi.hostByName(PI_HOSTNAME, piIP);
+    }
   }
 
-  String url = "ws://" + (piIP.toString() != "0.0.0.0" ? piIP.toString() : String(PI_HOSTNAME)) + ":" + String(PI_WS_PORT) + PI_WS_PATH;
+  String targetHost = (piIP != INADDR_NONE && piIP != IPAddress(0,0,0,0)) ? piIP.toString() : String(PI_HOSTNAME);
+  String url = "ws://" + targetHost + ":" + String(PI_WS_PORT) + PI_WS_PATH;
   Serial.printf("[WS] Connecting to %s\n", url.c_str());
   ws.connect(url);
 }
@@ -176,10 +187,4 @@ void wsPoll() {
 
 bool wsConnected() {
   return isConnected;
-}
-
-void wsSend(const char* json) {
-  if (isConnected) {
-    ws.send(json);
-  }
 }

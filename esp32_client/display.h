@@ -1,7 +1,8 @@
-﻿#pragma once
-#include "config.h"
+#pragma once
+#include <Arduino.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ILI9341.h>
+#include "config.h"
 
 extern Adafruit_ILI9341 tft;
 extern uint8_t artBuf[20004];

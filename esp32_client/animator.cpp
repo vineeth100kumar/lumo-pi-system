@@ -1,4 +1,5 @@
-﻿#include "animator.h"
+#include <Arduino.h>
+#include "animator.h"
 
 static LumoMood     currentMood     = MOOD_NORMAL;
 static CharSchedule currentSchedule = SCHED_AWAKE;
@@ -59,7 +60,6 @@ void animatorSetMood(LumoMood mood, CharSchedule sched) {
 void animatorTick() {
   unsigned long now = millis();
 
-  // --- SLEEP MODE: Eyes stay closed ---
   if (currentSchedule == SCHED_SLEEP) {
     if (eyesOpen) {
       eyesOpen = false;
@@ -68,7 +68,6 @@ void animatorTick() {
     return;
   }
 
-  // --- BLINK LOGIC ---
   if (!isBlinking) {
     if (now - lastBlinkStart >= blinkInterval) {
       isBlinking     = true;
@@ -77,7 +76,6 @@ void animatorTick() {
       needsRedraw    = true;
     }
   } else {
-    // Eyelids closed for 140ms
     if (now - lastBlinkStart >= 140) {
       isBlinking     = false;
       eyesOpen       = (currentSchedule != SCHED_SLEEP);
@@ -87,7 +85,6 @@ void animatorTick() {
     }
   }
 
-  // --- GAZE MICRO-MOVEMENT ---
   if (now - lastGazeMove >= gazeInterval) {
     lastGazeMove = now;
     gazeInterval = random(3000, 6500);
@@ -99,7 +96,6 @@ void animatorTick() {
     }
   }
 
-  // --- YAWN (When BORED) ---
   if (currentMood == MOOD_BORED && currentSchedule != SCHED_SLEEP) {
     if (!isYawning && (now - lastYawnTime >= 12000)) {
       isYawning    = true;

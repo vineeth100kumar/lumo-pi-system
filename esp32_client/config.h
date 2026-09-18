@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <Arduino.h>
 
 // ===================== PINS =====================
@@ -10,12 +10,11 @@
 #define NUMPIXELS     6
 
 // ===================== WIFI =====================
-// Change these to your network credentials
 #define WIFI_SSID  "TP-Link_34E8"
 #define WIFI_PASS  "19720883"
 
 // ===================== PI SERVER =====================
-#define PI_HOSTNAME  "lumo.local"
+#define PI_HOSTNAME  "192.168.0.149"
 #define PI_WS_PORT   8765
 #define PI_WS_PATH   "/"
 
@@ -49,33 +48,25 @@ enum NeoMode      { NEO_WARM, NEO_COLOR, NEO_BREATHE, NEO_OFF, NEO_ALARM };
 
 // ===================== CENTRAL STATE STRUCT =====================
 struct LumoState {
-  // Clock
   uint8_t  h = 0, m = 0;
   char     weekday[8] = "---";
   char     date[12]   = "--";
-  // Weather
   float    temp_c = 0.0f;
   char     weather_icon[12] = "clear";
-  // Spotify
   char     sp_title[64]  = "";
   char     sp_artist[64] = "";
   uint32_t sp_progress_ms = 0;
   uint32_t sp_duration_ms = 0;
   bool     sp_playing = false;
-  // Emotion
   LumoMood     mood     = MOOD_NORMAL;
   CharSchedule schedule = SCHED_AWAKE;
-  // Lights
   NeoMode  neo_mode       = NEO_WARM;
   uint8_t  neo_brightness = 40;
   uint16_t neo_hue        = 0;
-  // Tasks
   char    tasks[5][48];
   uint8_t task_count = 0;
-  // Alarm
   bool    alarm_ringing = false;
   uint8_t alarm_h = 7, alarm_m = 0;
-  // Dirty flags
   bool       flag_spotify_changed = false;
   bool       flag_tasks_changed   = false;
   bool       flag_screen_switch   = false;

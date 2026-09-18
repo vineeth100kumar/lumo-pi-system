@@ -1,4 +1,4 @@
-﻿#include <Arduino.h>
+#include <Arduino.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 
@@ -11,7 +11,7 @@
 static LumoState lumoState;
 static ScreenMode currentScreen = SCREEN_CONNECTING;
 
-static const char* btnName(Button b) {
+const char* btnName(Button b) {
   switch (b) {
     case BTN_OK:    return "OK";
     case BTN_UP:    return "UP";
@@ -22,22 +22,20 @@ static const char* btnName(Button b) {
   }
 }
 
-static void switchScreen(ScreenMode next) {
+void switchScreen(ScreenMode next) {
   currentScreen = next;
-  displayDrawScreen(next, lumoState, true); // Force full redraw on mode transition
+  displayDrawScreen(next, lumoState, true);
 }
 
-static void handleButton(Button btn) {
+void handleButton(Button btn) {
   if (btn == BTN_NONE) return;
 
   hapticPulse(45);
 
-  // Send button event to Raspberry Pi 5 immediately
   char json[64];
   snprintf(json, sizeof(json), "{\"evt\":\"BTN\",\"btn\":\"%s\"}", btnName(btn));
   wsSend(json);
 
-  // Local navigation handling
   if (currentScreen == SCREEN_FACE) {
     if (btn == BTN_RIGHT) switchScreen(SCREEN_CLOCK);
     else if (btn == BTN_LEFT) switchScreen(SCREEN_TASKS);
@@ -56,7 +54,6 @@ static void handleButton(Button btn) {
     if (btn == BTN_RIGHT || btn == BTN_LEFT) switchScreen(SCREEN_FACE);
   }
   else if (currentScreen == SCREEN_ALARM) {
-    // Any button dismisses alarm locally; Pi receives BTN event and sends ALARM_OFF
     lumoState.alarm_ringing = false;
     neoClear();
     switchScreen(SCREEN_FACE);
@@ -68,18 +65,14 @@ void setup() {
   delay(200);
   Serial.println("\n--- LUMO ESP32-C3 DISPLAY NODE ---");
 
-  // Haptic / Buzzer PWM Setup (Active-LOW)
   ledcAttach(BUZZER_PIN, HAPTIC_FREQ, HAPTIC_RES);
-  ledcWrite(BUZZER_PIN, 255); // 255 = OFF
+  ledcWrite(BUZZER_PIN, 255);
 
-  // Peripherals & Display
   initNeoPixels();
   displayInit();
 
-  // Show initial connecting screen
   displayDrawScreen(SCREEN_CONNECTING, lumoState, true);
 
-  // Connect to Wi-Fi
   Serial.printf("[WIFI] Connecting to %s", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   unsigned long startWifi = millis();
@@ -91,38 +84,31 @@ void setup() {
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("[WIFI] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    WiFi.setSleep(false); // Disable WiFi power save for minimum latency
+    WiFi.setSleep(false);
 
-    // Start mDNS resolver
     if (MDNS.begin("esp32-lumo")) {
       Serial.println("[MDNS] Started");
     }
 
-    // NTP sync as offline fallback
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET, NTP_SERVER1, NTP_SERVER2);
   } else {
     Serial.println("[WIFI] Connection failed. Will retry in loop.");
   }
 
-  // Initialize WebSocket Client & Face Animator
   wsInit(lumoState);
   wsConnect();
   animatorInit();
 }
 
 void loop() {
-  // Non-blocking network poll & haptic timer
   wsPoll();
   hapticUpdate();
 
-  // Read button ladder
   Button btn = readButton();
   handleButton(btn);
 
-  // Update Face Animation FSM
   animatorTick();
 
-  // If Pi server is not connected, show connecting screen
   if (!wsConnected()) {
     if (currentScreen != SCREEN_CONNECTING) {
       switchScreen(SCREEN_CONNECTING);
@@ -135,23 +121,20 @@ void loop() {
     delay(10);
     return;
   } else if (currentScreen == SCREEN_CONNECTING) {
-    // Just connected! Switch to default Face screen
     switchScreen(SCREEN_FACE);
   }
 
-  // Handle screen switch requested by WebSocket command (e.g. ALARM_RING)
   if (lumoState.flag_screen_switch) {
     lumoState.flag_screen_switch = false;
     switchScreen(lumoState.next_screen);
   }
 
-  // Screen-specific updates
   if (currentScreen == SCREEN_FACE) {
     if (animatorNeedsRedraw()) {
-      displayDrawScreen(SCREEN_FACE, lumoState, false); // Dirty-rect eye redraw
+      displayDrawScreen(SCREEN_FACE, lumoState, false);
       animatorClearRedraw();
     }
-    drawTimeBar(lumoState, false); // Redraws only when minute changes
+    drawTimeBar(lumoState, false);
   }
   else if (currentScreen == SCREEN_CLOCK) {
     static int lastMin = -1;
@@ -168,7 +151,6 @@ void loop() {
       if (lumoState.sp_progress_ms > lumoState.sp_duration_ms) {
         lumoState.sp_progress_ms = lumoState.sp_duration_ms;
       }
-      // Redraw progress bar and time text
       displayDrawScreen(SCREEN_SPOTIFY, lumoState, false);
     }
     if (lumoState.flag_spotify_changed || newArtReady) {
@@ -196,5 +178,5 @@ void loop() {
     }
   }
 
-  delay(6); // Cooperative yield for ESP32 WiFi & FreeRTOS
+  delay(6);
 }
