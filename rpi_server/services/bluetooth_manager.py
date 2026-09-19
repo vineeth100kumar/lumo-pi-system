@@ -100,7 +100,9 @@ class BluetoothManager:
 
         logger.info(f"Starting Bluetooth Pairing Mode for {timeout_sec}s...")
 
-        # Setup Bluetooth adapter
+        # Setup Bluetooth adapter as a Wearable Smartwatch (CoD: 0x000704)
+        # This tells iOS it's a wearable, NOT an audio speaker!
+        await self._run_cmd(["hciconfig", "hci0", "class", "0x000704"])
         await self._run_cmd(["bluetoothctl", "power", "on"])
         await self._run_cmd(["bluetoothctl", "system-alias", "LUMO Companion"])
         await self._run_cmd(["bluetoothctl", "pairable", "on"])
@@ -132,6 +134,27 @@ class BluetoothManager:
             await hub.send_json({"cmd": "HAPTIC", "ms": 60})
 
         return {"ok": True, "timeout": timeout_sec, "alias": "LUMO Companion"}
+
+    async def apply_wearable_config(self) -> Dict[str, Any]:
+        """Sets Class of Device to 0x000704 (Wearable Watch) and disables A2DP audio sink."""
+        import os
+        await self._run_cmd(["hciconfig", "hci0", "class", "0x000704"])
+        await self._run_cmd(["bluetoothctl", "system-alias", "LUMO Companion"])
+
+        # Execute setup_wearable_mode.sh if present
+        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setup_wearable_mode.sh")
+        if os.path.exists(script_path):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "bash", script_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+            except Exception as e:
+                logger.warning(f"Could not run setup_wearable_mode.sh: {e}")
+
+        return {"ok": True, "class": "0x000704 (Wearable Watch)", "alias": "LUMO Companion"}
 
     async def stop_pairing_mode(self) -> Dict[str, Any]:
         """Stops discovery mode."""

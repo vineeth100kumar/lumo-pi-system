@@ -341,9 +341,15 @@
       </button>
     </div>
 
+    <!-- Mode Explainer -->
+    <div style="font-size:0.75rem; color:var(--accent); margin-bottom:10px; display:flex; align-items:center; gap:6px;">
+      <span>⌚</span><span>Mode: Wearable Smartwatch (Audio plays on your AirPods/Phone, NOT on LUMO)</span>
+    </div>
+
     <!-- Paired Devices List -->
     <div style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">Paired Devices</div>
     <div id="btDeviceList" style="font-size:0.85rem; color:var(--muted); text-align:center; padding:6px 0;">No devices paired yet</div>
+    <button onclick="applyWearableMode()" style="padding:6px 10px; font-size:0.75rem; background:rgba(255,255,255,0.05); margin-top:10px; width:100%;">Force Wearable Mode (Disable Audio Hijacking)</button>
   </div>
 
   <!-- 7. iPhone Smartwatch Alerts -->
@@ -558,6 +564,12 @@
 
   async function pingBluetooth() {
     await postApi("/api/bluetooth/ping");
+  }
+
+  async function applyWearableMode() {
+    await postApi("/api/bluetooth/wearable-mode");
+    alert("Applied Wearable Smartwatch Mode! Audio will stay on your phone/AirPods.");
+    fetchStatus();
   }
 
   async function playAnim(anim) {
