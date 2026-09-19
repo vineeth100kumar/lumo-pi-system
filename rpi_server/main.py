@@ -248,6 +248,10 @@ async def apply_wearable_mode():
     res = await bt_manager.apply_wearable_config()
     return res
 
+@app.post("/api/bluetooth/connect")
+async def connect_bt(item: BtMac):
+    return await bt_manager.connect_device(item.mac)
+
 @app.post("/api/bluetooth/disconnect")
 async def disconnect_bt(item: BtMac):
     return await bt_manager.disconnect_device(item.mac)

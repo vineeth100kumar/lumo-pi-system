@@ -529,9 +529,12 @@
         item.innerHTML = `
           <div style="display:flex; flex-direction:column;">
             <span style="font-weight:600; font-size:0.9rem;">${d.name || 'Unknown Device'}</span>
-            <span style="font-size:0.75rem; color:var(--muted);">${d.mac} ${d.connected ? '• <span style="color:var(--green)">Active</span>' : ''}</span>
+            <span style="font-size:0.75rem; color:var(--muted);">${d.mac} ${d.connected ? '• <span style="color:var(--green)">Connected</span>' : ''}</span>
           </div>
-          <button onclick="removeBluetoothDevice('${d.mac}')" style="padding:4px 8px; font-size:0.75rem; color:var(--red);">Forget</button>
+          <div style="display:flex; gap:6px;">
+            ${!d.connected ? `<button onclick="connectBluetoothDevice('${d.mac}')" style="padding:4px 8px; font-size:0.75rem; background:var(--accent); color:#fff;">Connect</button>` : ''}
+            <button onclick="removeBluetoothDevice('${d.mac}')" style="padding:4px 8px; font-size:0.75rem; color:var(--red);">Forget</button>
+          </div>
         `;
         devList.appendChild(item);
       });
@@ -547,6 +550,11 @@
 
   async function stopPairingMode() {
     await postApi("/api/bluetooth/pair-mode/stop");
+    fetchStatus();
+  }
+
+  async function connectBluetoothDevice(mac) {
+    await postApi("/api/bluetooth/connect", { mac });
     fetchStatus();
   }
 

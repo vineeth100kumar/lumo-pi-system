@@ -162,6 +162,13 @@ class BluetoothManager:
         await self._run_cmd(["bluetoothctl", "discoverable", "off"])
         return {"ok": True}
 
+    async def connect_device(self, mac: str) -> Dict[str, Any]:
+        """Trusts and connects to a paired Bluetooth device."""
+        await self._run_cmd(["bluetoothctl", "trust", mac])
+        out = await self._run_cmd(["bluetoothctl", "connect", mac])
+        success = "Connection successful" in out or "Connected: yes" in out
+        return {"ok": success, "output": out}
+
     async def disconnect_device(self, mac: str) -> Dict[str, Any]:
         await self._run_cmd(["bluetoothctl", "disconnect", mac])
         self.is_connected = False
