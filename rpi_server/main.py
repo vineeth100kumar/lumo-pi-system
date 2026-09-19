@@ -20,6 +20,7 @@ from services.weather import WeatherService
 from services.alarms import AlarmManager
 from services.emotion import EmotionEngine
 from services.tasks import TaskService
+from services.system_stats import SystemStatsService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("LumoMain")
@@ -30,8 +31,14 @@ weather = WeatherService()
 alarms = AlarmManager()
 emotion = EmotionEngine()
 tasks = TaskService()
+system_stats = SystemStatsService()
 scheduler = AsyncIOScheduler()
 tz = pytz.timezone("Asia/Kolkata")
+
+current_screen = "FACE"
+
+def get_current_screen():
+    return current_screen
 
 # ===================== MDNS =====================
 def get_local_ips():
@@ -50,7 +57,6 @@ def get_local_ips():
 async def start_mdns():
     zc = AsyncZeroconf()
     local_ips = get_local_ips()
-    host_ip = local_ips[0]
 
     info = AsyncServiceInfo(
         "_http._tcp.local.",
@@ -83,20 +89,18 @@ async def on_esp32_ready():
     await weather.poll(hub)
     await emotion.push_schedule(hub)
     await tasks.push_to_esp32(hub)
-    # Send default warm ambient light
+    await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
     await hub.send_json({"cmd": "LIGHTS", "mode": "WARM", "brightness": 40, "hue": 0})
 
 # ===================== BUTTON DISPATCHER =====================
 async def on_button_event(btn: str):
     logger.info(f"Button pressed on ESP32: {btn}")
-    # If alarm is ringing, any button dismisses it
     if alarms.ringing_id is not None:
         alarms.dismiss()
         await hub.send_json({"cmd": "ALARM_OFF"})
         await emotion.on_alarm_dismissed(hub)
         return
 
-    # Music controls
     if btn == "OK":
         await spotify.toggle_play(hub)
     elif btn == "RIGHT":
@@ -110,19 +114,17 @@ async def lifespan(app: FastAPI):
     hub.set_button_callback(on_button_event)
     hub.set_ready_callback(on_esp32_ready)
 
-    # Start standalone WebSocket server on WS_PORT (8765)
     ws_server = await websockets.serve(hub.handle_connection, "0.0.0.0", WS_PORT)
     logger.info(f"ESP32 WebSocket Server listening on ws://0.0.0.0:{WS_PORT}")
 
-    # Register mDNS
     zc = await start_mdns()
 
-    # Background Scheduled Jobs
     scheduler.add_job(spotify.poll, "interval", seconds=2, args=[hub, emotion])
     scheduler.add_job(alarms.poll, "interval", seconds=5, args=[hub])
     scheduler.add_job(broadcast_clock, "interval", minutes=1)
     scheduler.add_job(weather.poll, "interval", minutes=30, args=[hub])
     scheduler.add_job(emotion.push_schedule, "interval", minutes=5, args=[hub])
+    scheduler.add_job(system_stats.poll, "interval", seconds=2, args=[hub, get_current_screen])
     scheduler.start()
 
     yield
@@ -141,6 +143,9 @@ async def serve_index():
     return FileResponse("static/index.html")
 
 # ===================== REST APIS =====================
+
+class ScreenSet(BaseModel):
+    screen: str
 
 class AlarmCreate(BaseModel):
     h: int
@@ -163,6 +168,7 @@ async def get_status():
     now = datetime.datetime.now(tz)
     return {
         "esp32_connected": hub.connected,
+        "screen": current_screen,
         "time": now.strftime("%H:%M"),
         "date": now.strftime("%a %d %b"),
         "temp_c": weather.last_temp,
@@ -170,11 +176,23 @@ async def get_status():
         "mood": emotion.current_mood,
         "schedule": emotion.current_schedule,
         "alarm_ringing": alarms.ringing_id is not None,
+        "system": system_stats.get_all(),
         "spotify": {
             "playing": spotify.is_playing,
             "title": getattr(spotify, "last_track_id", "")
         }
     }
+
+# Screen Mode Control
+@app.post("/api/screen")
+async def set_screen(item: ScreenSet):
+    global current_screen
+    current_screen = item.screen.upper()
+    await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
+    if current_screen == "SYSTEM":
+        await system_stats.poll(hub, get_current_screen)
+    logger.info(f"Screen switched via Web UI -> {current_screen}")
+    return {"ok": True, "screen": current_screen}
 
 # Alarms
 @app.get("/api/alarms")

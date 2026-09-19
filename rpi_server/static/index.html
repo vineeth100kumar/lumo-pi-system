@@ -1,13 +1,13 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>LUMO Smart Companion</title>
+  <title>LUMO Smart Controller</title>
   <style>
     :root {
       --bg: #090a0f;
-      --card: rgba(25, 28, 38, 0.7);
+      --card: rgba(25, 28, 38, 0.75);
       --card-border: rgba(255, 255, 255, 0.09);
       --accent: #0a84ff;
       --green: #30d158;
@@ -24,18 +24,18 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 20px 16px 80px 16px;
+      padding: 16px 14px 80px 14px;
       min-height: 100vh;
-      background-image: radial-gradient(circle at 50% 0%, rgba(10, 132, 255, 0.12) 0%, transparent 60%);
+      background-image: radial-gradient(circle at 50% 0%, rgba(10, 132, 255, 0.15) 0%, transparent 65%);
     }
     .container { width: 100%; max-width: 440px; }
     
     /* Header */
     .header {
       display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 24px; padding: 6px 4px;
+      margin-bottom: 16px; padding: 4px;
     }
-    .header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.5px; }
+    .header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
     .badge {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
@@ -49,27 +49,40 @@
     .card {
       background: var(--card);
       border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
       border-radius: 20px;
-      padding: 20px;
-      margin-bottom: 16px;
+      padding: 18px;
+      margin-bottom: 14px;
     }
     .card-title {
-      font-size: 0.95rem; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px;
+      font-size: 0.85rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px;
       display: flex; justify-content: space-between; align-items: center;
     }
 
-    /* Clock Hero */
-    .clock-hero { text-align: center; margin: 10px 0 20px 0; }
-    .clock-time { font-size: 3.6rem; font-weight: 200; letter-spacing: -1.5px; line-height: 1; }
-    .clock-sub { color: var(--muted); font-size: 0.95rem; margin-top: 8px; font-weight: 500; }
+    /* Screen Selector Grid */
+    .screen-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 6px;
+    }
+    .screen-btn {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 6px; padding: 12px 6px; border-radius: 14px;
+      background: rgba(255,255,255,0.05); border: 1px solid var(--card-border);
+      color: var(--muted); cursor: pointer; transition: all 0.2s; font-size: 0.8rem; font-weight: 600;
+    }
+    .screen-btn.active {
+      background: rgba(10, 132, 255, 0.2);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 14px rgba(10, 132, 255, 0.3);
+    }
+    .screen-btn .icon { font-size: 1.3rem; }
 
-    /* Buttons & Controls */
+    /* Buttons */
     button {
       background: rgba(255,255,255,0.08); border: 1px solid var(--card-border);
-      color: var(--text); border-radius: 12px; padding: 10px 16px;
+      color: var(--text); border-radius: 12px; padding: 10px 14px;
       font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
     }
     button:active { transform: scale(0.97); }
@@ -78,11 +91,11 @@
     button.warm { background: var(--warm); border: none; color: #000; }
 
     .btn-group { display: flex; gap: 8px; width: 100%; }
-    .btn-group button { flex: 1; text-align: center; padding: 12px 6px; }
+    .btn-group button { flex: 1; text-align: center; padding: 10px 4px; }
 
     /* Sliders */
-    .slider-row { margin: 14px 0 6px 0; }
-    .slider-label { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+    .slider-row { margin: 12px 0 4px 0; }
+    .slider-label { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
     input[type=range] {
       width: 100%; -webkit-appearance: none; background: rgba(255,255,255,0.12);
       height: 8px; border-radius: 4px; outline: none;
@@ -92,49 +105,57 @@
       background: #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer;
     }
 
-    /* Lists (Alarms & Tasks) */
+    /* System Stats Grid */
+    .stats-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .stat-box {
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px; padding: 12px; text-align: center;
+    }
+    .stat-val { font-size: 1.4rem; font-weight: 700; color: var(--text); margin-top: 2px; }
+    .stat-lbl { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Lists */
     .list-item {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
     }
     .list-item:last-child { border-bottom: none; }
     .item-left { display: flex; flex-direction: column; gap: 2px; }
-    .item-time { font-size: 1.3rem; font-weight: 600; }
-    .item-label { font-size: 0.85rem; color: var(--muted); }
+    .item-time { font-size: 1.2rem; font-weight: 600; }
+    .item-label { font-size: 0.8rem; color: var(--muted); }
 
-    .toggle-switch {
-      position: relative; width: 48px; height: 28px;
-    }
+    .toggle-switch { position: relative; width: 46px; height: 26px; }
     .toggle-switch input { opacity: 0; width: 0; height: 0; }
     .slider-toggle {
       position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-      background-color: rgba(255,255,255,0.15); transition: .3s; border-radius: 28px;
+      background-color: rgba(255,255,255,0.15); transition: .3s; border-radius: 26px;
     }
     .slider-toggle:before {
-      position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px;
+      position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px;
       background-color: white; transition: .3s; border-radius: 50%;
     }
     input:checked + .slider-toggle { background-color: var(--green); }
     input:checked + .slider-toggle:before { transform: translateX(20px); }
 
-    .add-row { display: flex; gap: 8px; margin-top: 14px; }
+    .add-row { display: flex; gap: 8px; margin-top: 12px; }
     .add-row input {
       flex: 1; background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
-      border-radius: 12px; padding: 10px 14px; color: #fff; font-size: 0.95rem; outline: none;
+      border-radius: 12px; padding: 10px 12px; color: #fff; font-size: 0.9rem; outline: none;
     }
 
-    /* Alarm Ringing Banner */
     #alarmBanner {
       display: none; background: var(--red); padding: 16px; border-radius: 16px;
-      margin-bottom: 16px; text-align: center; animation: pulse 1s infinite alternate;
+      margin-bottom: 14px; text-align: center; animation: pulse 1s infinite alternate;
     }
-    @keyframes pulse { from { opacity: 0.8; } to { opacity: 1.0; } }
+    @keyframes pulse { from { opacity: 0.85; } to { opacity: 1.0; } }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <!-- Header -->
+  <!-- Top Bar -->
   <div class="header">
     <h1>LUMO Control</h1>
     <div class="badge" id="statusBadge">
@@ -145,20 +166,62 @@
 
   <!-- Alarm Ringing Banner -->
   <div id="alarmBanner">
-    <h2 style="font-size:1.3rem; margin-bottom: 8px;">ALARM RINGING!</h2>
+    <h2 style="font-size:1.2rem; margin-bottom: 8px;">ALARM RINGING!</h2>
     <div style="display:flex; gap:10px; justify-content:center;">
       <button onclick="dismissAlarm()" class="primary" style="background:#fff; color:#000;">Dismiss</button>
       <button onclick="snoozeAlarm()" style="background:rgba(0,0,0,0.3);">Snooze 5m</button>
     </div>
   </div>
 
-  <!-- Clock & Weather Hero -->
-  <div class="clock-hero">
-    <div class="clock-time" id="clockTime">--:--</div>
-    <div class="clock-sub" id="clockSub">--</div>
+  <!-- 1. Display Screen Switcher (Zero Buttons Needed) -->
+  <div class="card">
+    <div class="card-title">Display Screen Mode</div>
+    <div class="screen-grid">
+      <div class="screen-btn active" id="btnScrFace" onclick="switchDisplay('FACE')">
+        <span class="icon">🤖</span><span>Face</span>
+      </div>
+      <div class="screen-btn" id="btnScrClock" onclick="switchDisplay('CLOCK')">
+        <span class="icon">⏰</span><span>Clock</span>
+      </div>
+      <div class="screen-btn" id="btnScrSystem" onclick="switchDisplay('SYSTEM')">
+        <span class="icon">📊</span><span>Pi Vitals</span>
+      </div>
+      <div class="screen-btn" id="btnScrSpotify" onclick="switchDisplay('SPOTIFY')">
+        <span class="icon">🎵</span><span>Music</span>
+      </div>
+      <div class="screen-btn" id="btnScrTasks" onclick="switchDisplay('TASKS')">
+        <span class="icon">📝</span><span>Tasks</span>
+      </div>
+      <div class="screen-btn" onclick="postApi('/api/haptic?ms=70')">
+        <span class="icon">📳</span><span>Haptic</span>
+      </div>
+    </div>
   </div>
 
-  <!-- Ambient Light Card -->
+  <!-- 2. Pi 5 Hardware Vitals -->
+  <div class="card">
+    <div class="card-title">Pi 5 System Vitals</div>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-lbl">CPU Temp</div>
+        <div class="stat-val" id="valCpuTemp">--.- °C</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-lbl">CPU Load</div>
+        <div class="stat-val" id="valCpuLoad">-- %</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-lbl">RAM Usage</div>
+        <div class="stat-val" id="valRam">-- %</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-lbl">Disk Storage</div>
+        <div class="stat-val" id="valDisk">-- %</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Ambient Lighting -->
   <div class="card">
     <div class="card-title">Ambient Lighting</div>
     <div class="btn-group">
@@ -179,12 +242,12 @@
     </div>
   </div>
 
-  <!-- Music Remote Card -->
+  <!-- 4. Music Remote -->
   <div class="card">
-    <div class="card-title">Music Remote</div>
-    <div style="text-align:center; margin-bottom: 14px;">
-      <div id="spTitle" style="font-size:1.1rem; font-weight:600;">No Track Playing</div>
-      <div id="spArtist" style="font-size:0.85rem; color:var(--muted); margin-top:3px;">Idle</div>
+    <div class="card-title">Spotify Player</div>
+    <div style="text-align:center; margin-bottom: 12px;">
+      <div id="spTitle" style="font-size:1.05rem; font-weight:600;">No Track Playing</div>
+      <div id="spArtist" style="font-size:0.85rem; color:var(--muted); margin-top:2px;">Idle</div>
     </div>
     <div class="btn-group">
       <button onclick="postApi('/api/spotify/prev')">Prev</button>
@@ -193,21 +256,21 @@
     </div>
   </div>
 
-  <!-- Alarms Card -->
+  <!-- 5. Alarms Manager -->
   <div class="card">
     <div class="card-title">Alarms</div>
     <div id="alarmList"></div>
 
     <div class="add-row">
       <input type="time" id="newAlarmTime" value="07:30" style="max-width:110px;">
-      <input type="text" id="newAlarmLabel" placeholder="Label (optional)">
+      <input type="text" id="newAlarmLabel" placeholder="Label">
       <button onclick="addAlarm()" class="primary">Add</button>
     </div>
   </div>
 
-  <!-- Tasks Card -->
+  <!-- 6. Tasks List -->
   <div class="card">
-    <div class="card-title">Tasks (Top 5 on Screen)</div>
+    <div class="card-title">Tasks (Synced to Display)</div>
     <div id="taskList"></div>
 
     <div class="add-row">
@@ -216,21 +279,38 @@
     </div>
   </div>
 
-  <!-- Emotion / Haptic Controls -->
+  <!-- 7. Companion Personality -->
   <div class="card">
-    <div class="card-title">Companion Personality</div>
-    <div class="btn-group" style="margin-bottom:10px;">
+    <div class="card-title">LUMO Personality</div>
+    <div class="btn-group">
       <button onclick="setEmotion('HAPPY')">Happy</button>
       <button onclick="setEmotion('EXCITED')">Excited</button>
       <button onclick="setEmotion('BORED')">Bored</button>
       <button onclick="setEmotion('NORMAL')">Normal</button>
     </div>
-    <button onclick="postApi('/api/haptic?ms=70')" style="width:100%;">Test Haptic Motor</button>
   </div>
 </div>
 
 <script>
   let currentLightMode = "WARM";
+  let activeScreenMode = "FACE";
+
+  async function switchDisplay(mode) {
+    activeScreenMode = mode;
+    updateScreenButtons(mode);
+    await postApi("/api/screen", { screen: mode });
+  }
+
+  function updateScreenButtons(mode) {
+    const screens = ["FACE", "CLOCK", "SYSTEM", "SPOTIFY", "TASKS"];
+    screens.forEach(s => {
+      const btn = document.getElementById("btnScr" + s.charAt(0) + s.slice(1).toLowerCase());
+      if (btn) {
+        if (s === mode) btn.classList.add("active");
+        else btn.classList.remove("active");
+      }
+    });
+  }
 
   async function fetchStatus() {
     try {
@@ -247,8 +327,17 @@
         txt.textContent = "ESP32 Offline";
       }
 
-      document.getElementById("clockTime").textContent = data.time || "--:--";
-      document.getElementById("clockSub").textContent = `${data.date} • ${data.temp_c}°C ${data.weather_icon}`;
+      if (data.screen && data.screen !== activeScreenMode) {
+        activeScreenMode = data.screen;
+        updateScreenButtons(data.screen);
+      }
+
+      if (data.system) {
+        document.getElementById("valCpuTemp").textContent = `${data.system.cpu_temp} °C`;
+        document.getElementById("valCpuLoad").textContent = `${data.system.cpu_pct} %`;
+        document.getElementById("valRam").textContent = `${data.system.ram_pct} %`;
+        document.getElementById("valDisk").textContent = `${data.system.disk_pct} %`;
+      }
 
       const banner = document.getElementById("alarmBanner");
       banner.style.display = data.alarm_ringing ? "block" : "none";
@@ -275,7 +364,7 @@
               <input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="toggleAlarm(${a.id})">
               <span class="slider-toggle"></span>
             </label>
-            <button onclick="deleteAlarm(${a.id})" style="padding:6px 10px; color:var(--red);">X</button>
+            <button onclick="deleteAlarm(${a.id})" style="padding:4px 8px; color:var(--red);">X</button>
           </div>
         `;
         list.appendChild(item);
@@ -372,11 +461,10 @@
 
   function setEmotion(mood) { postApi("/api/emotion", { mood }); }
 
-  // Initial polls
   fetchStatus();
   fetchAlarms();
   fetchTasks();
-  setInterval(fetchStatus, 2500);
+  setInterval(fetchStatus, 2000);
 </script>
 </body>
 </html>

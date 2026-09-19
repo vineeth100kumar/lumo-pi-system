@@ -11,53 +11,9 @@
 static LumoState lumoState;
 static ScreenMode currentScreen = SCREEN_CONNECTING;
 
-const char* btnName(Button b) {
-  switch (b) {
-    case BTN_OK:    return "OK";
-    case BTN_UP:    return "UP";
-    case BTN_DOWN:  return "DOWN";
-    case BTN_LEFT:  return "LEFT";
-    case BTN_RIGHT: return "RIGHT";
-    default:        return "NONE";
-  }
-}
-
 void switchScreen(ScreenMode next) {
   currentScreen = next;
   displayDrawScreen(next, lumoState, true);
-}
-
-void handleButton(Button btn) {
-  if (btn == BTN_NONE) return;
-
-  hapticPulse(45);
-
-  char json[64];
-  snprintf(json, sizeof(json), "{\"evt\":\"BTN\",\"btn\":\"%s\"}", btnName(btn));
-  wsSend(json);
-
-  if (currentScreen == SCREEN_FACE) {
-    if (btn == BTN_RIGHT) switchScreen(SCREEN_CLOCK);
-    else if (btn == BTN_LEFT) switchScreen(SCREEN_TASKS);
-    else if (btn == BTN_OK) switchScreen(SCREEN_SPOTIFY);
-  }
-  else if (currentScreen == SCREEN_CLOCK) {
-    if (btn == BTN_LEFT) switchScreen(SCREEN_TASKS);
-    else if (btn == BTN_OK) switchScreen(SCREEN_FACE);
-    else if (btn == BTN_RIGHT) switchScreen(SCREEN_SPOTIFY);
-  }
-  else if (currentScreen == SCREEN_SPOTIFY) {
-    if (btn == BTN_LEFT) switchScreen(SCREEN_CLOCK);
-    else if (btn == BTN_RIGHT) switchScreen(SCREEN_FACE);
-  }
-  else if (currentScreen == SCREEN_TASKS) {
-    if (btn == BTN_RIGHT || btn == BTN_LEFT) switchScreen(SCREEN_FACE);
-  }
-  else if (currentScreen == SCREEN_ALARM) {
-    lumoState.alarm_ringing = false;
-    neoClear();
-    switchScreen(SCREEN_FACE);
-  }
 }
 
 void setup() {
@@ -104,8 +60,15 @@ void loop() {
   wsPoll();
   hapticUpdate();
 
+  // Button ladder read (optional, sends events if pressed)
   Button btn = readButton();
-  handleButton(btn);
+  if (btn != BTN_NONE) {
+    hapticPulse(45);
+    char json[64];
+    const char* bName = (btn == BTN_OK ? "OK" : (btn == BTN_UP ? "UP" : (btn == BTN_DOWN ? "DOWN" : (btn == BTN_LEFT ? "LEFT" : "RIGHT"))));
+    snprintf(json, sizeof(json), "{\"evt\":\"BTN\",\"btn\":\"%s\"}", bName);
+    wsSend(json);
+  }
 
   animatorTick();
 
@@ -124,6 +87,7 @@ void loop() {
     switchScreen(SCREEN_FACE);
   }
 
+  // Handle remote screen switch command from Web Page
   if (lumoState.flag_screen_switch) {
     lumoState.flag_screen_switch = false;
     switchScreen(lumoState.next_screen);
@@ -141,6 +105,12 @@ void loop() {
     if (lumoState.m != lastMin) {
       lastMin = lumoState.m;
       displayDrawScreen(SCREEN_CLOCK, lumoState, false);
+    }
+  }
+  else if (currentScreen == SCREEN_SYSTEM) {
+    if (lumoState.flag_system_changed) {
+      lumoState.flag_system_changed = false;
+      displayDrawScreen(SCREEN_SYSTEM, lumoState, false);
     }
   }
   else if (currentScreen == SCREEN_SPOTIFY) {

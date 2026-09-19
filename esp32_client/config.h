@@ -37,11 +37,11 @@
 #define V_TOL   0.05f
 
 // ===================== FIRMWARE =====================
-#define FW_VERSION "1.0.0"
+#define FW_VERSION "1.1.0"
 
 // ===================== ENUMS =====================
 enum Button       { BTN_NONE, BTN_OK, BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT };
-enum ScreenMode   { SCREEN_FACE, SCREEN_CLOCK, SCREEN_SPOTIFY, SCREEN_TASKS, SCREEN_ALARM, SCREEN_CONNECTING };
+enum ScreenMode   { SCREEN_FACE, SCREEN_CLOCK, SCREEN_SYSTEM, SCREEN_SPOTIFY, SCREEN_TASKS, SCREEN_ALARM, SCREEN_CONNECTING };
 enum LumoMood     { MOOD_NORMAL, MOOD_HAPPY, MOOD_BORED, MOOD_SAD, MOOD_EXCITED };
 enum CharSchedule { SCHED_AWAKE, SCHED_DROWSY, SCHED_SLEEP };
 enum NeoMode      { NEO_WARM, NEO_COLOR, NEO_BREATHE, NEO_OFF, NEO_ALARM };
@@ -67,8 +67,17 @@ struct LumoState {
   uint8_t task_count = 0;
   bool    alarm_ringing = false;
   uint8_t alarm_h = 7, alarm_m = 0;
+
+  // Pi 5 System Vitals
+  float   cpu_temp = 0.0f;
+  uint8_t cpu_pct  = 0;
+  uint8_t ram_pct  = 0;
+  uint8_t disk_pct = 0;
+
+  // Dirty flags
   bool       flag_spotify_changed = false;
   bool       flag_tasks_changed   = false;
+  bool       flag_system_changed  = false;
   bool       flag_screen_switch   = false;
   ScreenMode next_screen          = SCREEN_FACE;
 };

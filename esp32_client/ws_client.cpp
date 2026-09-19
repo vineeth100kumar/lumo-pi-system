@@ -37,7 +37,24 @@ static void handleTextMessage(const String& payload) {
 
   const char* cmd = doc["cmd"] | "";
 
-  if (strcmp(cmd, "CLOCK") == 0) {
+  if (strcmp(cmd, "SCREEN") == 0) {
+    const char* m = doc["mode"] | "FACE";
+    if (strcmp(m, "FACE") == 0)         s.next_screen = SCREEN_FACE;
+    else if (strcmp(m, "CLOCK") == 0)   s.next_screen = SCREEN_CLOCK;
+    else if (strcmp(m, "SYSTEM") == 0)  s.next_screen = SCREEN_SYSTEM;
+    else if (strcmp(m, "SPOTIFY") == 0) s.next_screen = SCREEN_SPOTIFY;
+    else if (strcmp(m, "TASKS") == 0)   s.next_screen = SCREEN_TASKS;
+    s.flag_screen_switch = true;
+    Serial.printf("[WS] Remote screen switch: %s\n", m);
+  }
+  else if (strcmp(cmd, "SYSTEM_STATS") == 0) {
+    s.cpu_temp = doc["cpu_temp"] | s.cpu_temp;
+    s.cpu_pct  = doc["cpu_pct"]  | s.cpu_pct;
+    s.ram_pct  = doc["ram_pct"]  | s.ram_pct;
+    s.disk_pct = doc["disk_pct"] | s.disk_pct;
+    s.flag_system_changed = true;
+  }
+  else if (strcmp(cmd, "CLOCK") == 0) {
     s.h = doc["h"] | s.h;
     s.m = doc["m"] | s.m;
     if (doc["weekday"].is<const char*>()) {

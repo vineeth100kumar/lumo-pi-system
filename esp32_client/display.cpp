@@ -8,7 +8,6 @@ Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 uint8_t artBuf[20004];
 bool newArtReady = false;
 
-// Theme Colors (Pre-computed RGB565)
 static const uint16_t COLOR_BG_BLACK  = 0x0000;
 static const uint16_t COLOR_BG_NAVY   = 0x11AB; // tft.color565(18, 30, 55)
 static const uint16_t COLOR_HEADER    = 0x11EB; // tft.color565(18, 30, 55)
@@ -40,7 +39,6 @@ void onNewArt(const uint8_t* data, size_t len) {
   }
 }
 
-// Pre-calculated Soft Ellipse (rx=14, ry=10) from workinprogmess12
 static void fillSoftEllipse(int cx, int cy, int rx, int ry, uint16_t color) {
   if (rx == 14 && ry == 10) {
     static int8_t eyeX[11];
@@ -76,7 +74,6 @@ void drawProgressBar(int x, int y, int w, int h, float pct, uint16_t fillColor, 
   }
 }
 
-// ===================== TIME BAR =====================
 void drawTimeBar(const LumoState& s, bool force) {
   if (!force && s.m == lastMinuteDrawn) return;
   lastMinuteDrawn = s.m;
@@ -102,11 +99,9 @@ void drawTimeBar(const LumoState& s, bool force) {
   tft.print(dateBuf);
 }
 
-// ===================== SCREEN: FACE =====================
 static void drawFaceFull(const LumoState& s) {
   tft.fillScreen(COLOR_BG_NAVY);
 
-  // Top header bar (y=0..38)
   tft.fillRect(0, 0, 320, 38, COLOR_HEADER);
   tft.setFont(NULL);
   tft.setTextSize(2);
@@ -117,35 +112,29 @@ static void drawFaceFull(const LumoState& s) {
   tft.print("LUMO");
   tft.drawFastHLine(60, 36, 200, COLOR_MUTED);
 
-  // Bottom decorative lines (y=190..196) from workinprogmess12
   for (int i = 0; i < 6; i++) {
     tft.drawFastHLine(40 + i, 190 + i, 240 - (i * 2), tft.color565(30, 60, 110));
   }
 
-  // Static bottom time bar (y=200..240)
   drawTimeBar(s, true);
 }
 
 static void drawFaceEyes(const LumoState& s) {
-  // Proven coordinates from workinprogmess12: cx = 135 and 185 (50px apart, centered around 160)
   int gaze = animatorGetEyeOffsetX();
   int lx = 135 + gaze;
   int rx = 185 + gaze;
   int y  = 88;
 
-  // Clear eye bounding box (dirty-rect)
   tft.fillRect(90, 50, 180, 58, COLOR_BG_NAVY);
 
   if (animatorEyesOpen()) {
     fillSoftEllipse(lx, y, 14, 10, COLOR_EYES);
     fillSoftEllipse(rx, y, 14, 10, COLOR_EYES);
   } else {
-    // Eyelid line
     tft.fillRect(lx - 14, y, 28, 4, COLOR_EYES);
     tft.fillRect(rx - 14, y, 28, 4, COLOR_EYES);
   }
 
-  // Mouth region
   tft.fillRect(115, 112, 90, 35, COLOR_BG_NAVY);
 
   if (animatorYawning()) {
@@ -160,7 +149,6 @@ static void drawFaceEyes(const LumoState& s) {
     } else if (s.mood == MOOD_BORED) {
       tft.drawFastHLine(cx - 16, cy + 4, 32, COLOR_SMILE);
     } else {
-      // Warm Natural Smile (from workinprogmess12)
       for (int x = -r; x <= r; x++) {
         int dy = (int)(sqrt(r * r - x * x) / 4.5f);
         tft.drawPixel(cx + x, cy + dy, COLOR_SMILE);
@@ -169,14 +157,12 @@ static void drawFaceEyes(const LumoState& s) {
   }
 }
 
-// ===================== SCREEN: CLOCK =====================
 static void drawClockScreen(const LumoState& s, bool full) {
   tft.setFont(NULL);
 
   if (full) {
     tft.fillScreen(COLOR_BG_BLACK);
 
-    // Top status bar
     char wBuf[32];
     snprintf(wBuf, sizeof(wBuf), "%.1f C  %s", s.temp_c, s.weather_icon);
     tft.setTextSize(2);
@@ -189,14 +175,12 @@ static void drawClockScreen(const LumoState& s, bool full) {
     tft.print("LUMO");
     tft.drawFastHLine(10, 34, 300, tft.color565(50, 50, 60));
 
-    // Nav hint at bottom
     tft.setTextSize(1);
     tft.setTextColor(COLOR_MUTED);
     tft.setCursor(40, 218);
-    tft.print("<- Tasks       (OK) Face       Music ->");
+    tft.print("Controlled via Local Web Dashboard");
   }
 
-  // Big Clock Digits (TextSize 6 = 36x48px per char, total width ~180px, perfectly centered)
   tft.fillRect(20, 52, 280, 55, COLOR_BG_BLACK);
   char tBuf[16];
   snprintf(tBuf, sizeof(tBuf), "%02d:%02d", s.h, s.m);
@@ -207,7 +191,6 @@ static void drawClockScreen(const LumoState& s, bool full) {
   tft.setCursor((320 - w) / 2, 54);
   tft.print(tBuf);
 
-  // Date (TextSize 2, perfectly spaced below time)
   tft.fillRect(20, 118, 280, 24, COLOR_BG_BLACK);
   char dBuf[32];
   snprintf(dBuf, sizeof(dBuf), "%s, %s", s.weekday, s.date);
@@ -217,7 +200,6 @@ static void drawClockScreen(const LumoState& s, bool full) {
   tft.setCursor((320 - w) / 2, 120);
   tft.print(dBuf);
 
-  // Alarm Status (TextSize 2, highlighted)
   tft.fillRect(20, 155, 280, 24, COLOR_BG_BLACK);
   char aBuf[32];
   snprintf(aBuf, sizeof(aBuf), "ALARM  %02d:%02d", s.alarm_h, s.alarm_m);
@@ -228,14 +210,57 @@ static void drawClockScreen(const LumoState& s, bool full) {
   tft.print(aBuf);
 }
 
-// ===================== SCREEN: SPOTIFY =====================
+// SCREEN: SYSTEM VITALS (Raspberry Pi 5 Status)
+static void drawSystemScreen(const LumoState& s, bool full) {
+  tft.setFont(NULL);
+
+  if (full) {
+    tft.fillScreen(COLOR_BG_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(COLOR_ACCENT);
+    tft.setCursor(12, 10);
+    tft.print("Raspberry Pi 5 Vitals");
+    tft.drawFastHLine(10, 32, 300, tft.color565(50, 50, 60));
+
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_MUTED);
+    tft.setCursor(65, 220);
+    tft.print("Controlled via Web Dashboard");
+  }
+
+  // CPU Temp
+  tft.fillRect(14, 42, 292, 18, COLOR_BG_BLACK);
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_WHITE);
+  tft.setCursor(14, 42);
+  tft.printf("CPU Temp: %.1f C", s.cpu_temp);
+  drawProgressBar(14, 64, 292, 8, s.cpu_temp / 85.0f, (s.cpu_temp > 70.0f ? COLOR_RED_PULSE : COLOR_ACCENT), tft.color565(40, 40, 50));
+
+  // CPU Load
+  tft.fillRect(14, 82, 292, 18, COLOR_BG_BLACK);
+  tft.setCursor(14, 82);
+  tft.printf("CPU Load: %d%%", s.cpu_pct);
+  drawProgressBar(14, 104, 292, 8, s.cpu_pct / 100.0f, COLOR_GREEN, tft.color565(40, 40, 50));
+
+  // RAM Usage
+  tft.fillRect(14, 122, 292, 18, COLOR_BG_BLACK);
+  tft.setCursor(14, 122);
+  tft.printf("RAM:      %d%%", s.ram_pct);
+  drawProgressBar(14, 144, 292, 8, s.ram_pct / 100.0f, COLOR_ACCENT, tft.color565(40, 40, 50));
+
+  // Disk Storage
+  tft.fillRect(14, 162, 292, 18, COLOR_BG_BLACK);
+  tft.setCursor(14, 162);
+  tft.printf("Disk:     %d%%", s.disk_pct);
+  drawProgressBar(14, 184, 292, 8, s.disk_pct / 100.0f, COLOR_MUTED, tft.color565(40, 40, 50));
+}
+
 static void drawSpotifyScreen(const LumoState& s, bool full) {
   tft.setFont(NULL);
 
   if (full) {
     tft.fillScreen(COLOR_BG_BLACK);
 
-    // Header
     tft.setTextSize(2);
     tft.setTextColor(COLOR_GREEN);
     tft.setCursor(12, 10);
@@ -246,23 +271,19 @@ static void drawSpotifyScreen(const LumoState& s, bool full) {
     tft.print("LUMO");
     tft.drawFastHLine(10, 32, 300, tft.color565(40, 40, 50));
 
-    // Nav hint
     tft.setTextSize(1);
     tft.setCursor(30, 218);
-    tft.print("<- Clock     (OK) Play/Pause     Face ->");
+    tft.print("Controlled via Local Web Dashboard");
   }
 
-  // 100x100 Album Art Box (x=12, y=44)
   if (newArtReady || full) {
     tft.drawRect(10, 42, 104, 104, tft.color565(60, 60, 70));
     tft.drawRGBBitmap(12, 44, (uint16_t*)artBuf, 100, 100);
     newArtReady = false;
   }
 
-  // Track & Artist on right side (x=124..315, 191px width)
   tft.fillRect(122, 42, 195, 104, COLOR_BG_BLACK);
 
-  // Title (TextSize 2, max 15 chars)
   tft.setTextSize(2);
   tft.setTextColor(COLOR_WHITE);
   tft.setCursor(124, 46);
@@ -271,7 +292,6 @@ static void drawSpotifyScreen(const LumoState& s, bool full) {
   titleCut[15] = '\0';
   tft.print(strlen(titleCut) > 0 ? titleCut : "No Track");
 
-  // Artist (TextSize 2, muted, max 15 chars)
   tft.setTextColor(COLOR_MUTED);
   tft.setCursor(124, 72);
   char artistCut[16];
@@ -279,7 +299,6 @@ static void drawSpotifyScreen(const LumoState& s, bool full) {
   artistCut[15] = '\0';
   tft.print(strlen(artistCut) > 0 ? artistCut : "Idle");
 
-  // Time & Status (TextSize 1)
   tft.setTextSize(1);
   tft.setTextColor(COLOR_WHITE);
   tft.setCursor(124, 108);
@@ -294,24 +313,20 @@ static void drawSpotifyScreen(const LumoState& s, bool full) {
   tft.setCursor(124, 126);
   tft.print(s.sp_playing ? "[PLAYING]" : "[PAUSED]");
 
-  // Progress Bar (x=12, y=162, w=296, h=8)
   float pct = (s.sp_duration_ms > 0) ? ((float)s.sp_progress_ms / s.sp_duration_ms) : 0.0f;
   drawProgressBar(12, 162, 296, 8, pct, COLOR_GREEN, tft.color565(40, 40, 40));
 }
 
-// ===================== SCREEN: TASKS =====================
 static void drawTasksScreen(const LumoState& s) {
   tft.setFont(NULL);
   tft.fillScreen(COLOR_BG_BLACK);
 
-  // Header
   tft.setTextSize(2);
   tft.setTextColor(COLOR_WHITE);
   tft.setCursor(12, 10);
   tft.print("Tasks");
   tft.drawFastHLine(10, 32, 300, tft.color565(50, 50, 60));
 
-  // Top 5 Tasks (comfortable 28px spacing)
   int y = 48;
   for (int i = 0; i < s.task_count && i < 5; i++) {
     tft.setTextSize(2);
@@ -334,14 +349,12 @@ static void drawTasksScreen(const LumoState& s) {
     tft.print("All tasks done!");
   }
 
-  // Footer nav
   tft.setTextSize(1);
   tft.setTextColor(COLOR_MUTED);
-  tft.setCursor(45, 218);
-  tft.print("<- Face                     (OK) Toggle");
+  tft.setCursor(65, 218);
+  tft.print("Controlled via Web Dashboard");
 }
 
-// ===================== SCREEN: ALARM =====================
 static void drawAlarmScreen(const LumoState& s) {
   static bool invert = false;
   invert = !invert;
@@ -364,13 +377,12 @@ static void drawAlarmScreen(const LumoState& s) {
   tft.print(aBuf);
 
   tft.setTextSize(2);
-  const char* hint = "PRESS ANY BUTTON";
+  const char* hint = "TAP DISMISS IN WEB UI";
   tft.getTextBounds(hint, 0, 0, &x1, &y1, &w, &h);
   tft.setCursor((320 - w) / 2, 175);
   tft.print(hint);
 }
 
-// ===================== SCREEN: CONNECTING =====================
 static void drawConnectingScreen(const LumoState& s) {
   static int dotCount = 0;
   dotCount = (dotCount + 1) % 4;
@@ -378,7 +390,6 @@ static void drawConnectingScreen(const LumoState& s) {
   tft.setFont(NULL);
   tft.fillScreen(COLOR_BG_NAVY);
 
-  // Draw LUMO face in background
   fillSoftEllipse(135, 75, 14, 10, COLOR_EYES);
   fillSoftEllipse(185, 75, 14, 10, COLOR_EYES);
   tft.drawFastHLine(148, 105, 24, COLOR_SMILE);
@@ -403,7 +414,6 @@ static void drawConnectingScreen(const LumoState& s) {
   tft.print(ipBuf);
 }
 
-// ===================== DISPATCHER =====================
 void displayDrawScreen(ScreenMode mode, const LumoState& s, bool forceFullRedraw) {
   bool modeChanged = (mode != lastModeDrawn) || forceFullRedraw;
   lastModeDrawn = mode;
@@ -415,6 +425,9 @@ void displayDrawScreen(ScreenMode mode, const LumoState& s, bool forceFullRedraw
       break;
     case SCREEN_CLOCK:
       drawClockScreen(s, modeChanged);
+      break;
+    case SCREEN_SYSTEM:
+      drawSystemScreen(s, modeChanged);
       break;
     case SCREEN_SPOTIFY:
       drawSpotifyScreen(s, modeChanged);
