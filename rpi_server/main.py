@@ -23,6 +23,7 @@ from services.tasks import TaskService
 from services.system_stats import SystemStatsService
 from services.animation_engine import AnimationEngine
 from services.ios_companion import IOSCompanionService
+from services.bluetooth_manager import BluetoothManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("LumoMain")
@@ -36,6 +37,7 @@ tasks = TaskService()
 system_stats = SystemStatsService()
 anim_engine = AnimationEngine()
 ios_companion = IOSCompanionService()
+bt_manager = BluetoothManager()
 scheduler = AsyncIOScheduler()
 tz = pytz.timezone("Asia/Kolkata")
 
@@ -137,8 +139,12 @@ async def lifespan(app: FastAPI):
     async def bt_poll_wrapper():
         await ios_companion.poll_bluetooth_media(hub, anim_engine)
 
+    async def bt_events_wrapper():
+        await bt_manager.poll_connection_events(hub, anim_engine)
+
     scheduler.add_job(anim_poll_wrapper, "interval", seconds=2)
     scheduler.add_job(bt_poll_wrapper, "interval", seconds=2)
+    scheduler.add_job(bt_events_wrapper, "interval", seconds=2)
     scheduler.start()
 
     yield
@@ -189,9 +195,13 @@ class NotifPush(BaseModel):
     title: str
     body: str
 
+class BtMac(BaseModel):
+    mac: str
+
 @app.get("/api/status")
 async def get_status():
     now = datetime.datetime.now(tz)
+    bt_status = await bt_manager.get_status()
     return {
         "esp32_connected": hub.connected,
         "screen": current_screen,
@@ -210,13 +220,47 @@ async def get_status():
             "title": getattr(spotify, "last_track_id", "")
         },
         "ios_music": {
-            "connected": ios_companion.is_connected,
+            "connected": ios_companion.is_connected or bt_status.get("connected", False),
             "playing": ios_companion.is_playing,
             "title": ios_companion.current_title,
             "artist": ios_companion.current_artist,
             "album": ios_companion.current_album
-        }
+        },
+        "bluetooth": bt_status
     }
+
+# Bluetooth Pairing & Device APIs
+@app.get("/api/bluetooth/status")
+async def get_bluetooth_status():
+    return await bt_manager.get_status()
+
+@app.post("/api/bluetooth/pair-mode")
+async def start_bt_pairing():
+    res = await bt_manager.start_pairing_mode(timeout_sec=180, hub=hub)
+    return res
+
+@app.post("/api/bluetooth/pair-mode/stop")
+async def stop_bt_pairing():
+    return await bt_manager.stop_pairing_mode()
+
+@app.post("/api/bluetooth/disconnect")
+async def disconnect_bt(item: BtMac):
+    return await bt_manager.disconnect_device(item.mac)
+
+@app.delete("/api/bluetooth/device/{mac}")
+async def remove_bt_device(mac: str):
+    return await bt_manager.remove_device(mac)
+
+@app.post("/api/bluetooth/ping")
+async def ping_bt():
+    await hub.send_json({"cmd": "HAPTIC", "ms": 70})
+    await hub.send_json({
+        "cmd": "NOTIF",
+        "app": "Bluetooth",
+        "title": "Ping OK",
+        "body": "Signal verified!"
+    })
+    return {"ok": True}
 
 # Animation & Expression Studio APIs
 @app.post("/api/animation/play")
