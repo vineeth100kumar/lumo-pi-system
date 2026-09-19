@@ -18,6 +18,7 @@ static const uint16_t COLOR_MUTED     = 0x7BEF;
 static const uint16_t COLOR_ACCENT    = 0x2BDF;
 static const uint16_t COLOR_GREEN     = 0x1DB4;
 static const uint16_t COLOR_RED_PULSE = 0xD800;
+static const uint16_t COLOR_RED_DARK  = 0x7800;
 static const uint16_t COLOR_BLUSH     = 0xFBAF; // Soft pink blush
 static const uint16_t COLOR_HOT_PINK  = 0xF9B3; // Heart eyes
 

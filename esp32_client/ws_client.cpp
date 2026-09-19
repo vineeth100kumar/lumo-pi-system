@@ -207,21 +207,22 @@ void wsConnect() {
     return;
   }
 
-  Serial.println("[WS] Resolving Pi Server...");
+  String hostStr = PI_HOSTNAME;
   IPAddress piIP;
   if (!piIP.fromString(PI_HOSTNAME)) {
-    int n = MDNS.queryHost(PI_HOSTNAME, 3000);
-    if (n > 0) {
-      piIP = MDNS.IP(0);
-      Serial.printf("[WS] mDNS resolved: %s -> %s\n", PI_HOSTNAME, piIP.toString().c_str());
+    IPAddress resolved = MDNS.queryHost(PI_HOSTNAME, 3000);
+    if (resolved != INADDR_NONE && resolved[0] != 0) {
+      hostStr = resolved.toString();
+      Serial.printf("[WS] mDNS resolved: %s -> %s\n", PI_HOSTNAME, hostStr.c_str());
     } else {
-      Serial.println("[WS] mDNS query failed. Retrying...");
-      return;
+      Serial.println("[WS] mDNS query failed. Trying direct hostname...");
     }
+  } else {
+    hostStr = piIP.toString();
   }
 
-  Serial.printf("[WS] Connecting to ws://%s:%d%s\n", piIP.toString().c_str(), PI_WS_PORT, PI_WS_PATH);
-  client.connect(piIP, PI_WS_PORT, PI_WS_PATH);
+  Serial.printf("[WS] Connecting to ws://%s:%d%s\n", hostStr.c_str(), PI_WS_PORT, PI_WS_PATH);
+  client.connect(hostStr, PI_WS_PORT, PI_WS_PATH);
 }
 
 void wsPoll() {
