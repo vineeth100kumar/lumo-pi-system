@@ -1,4 +1,4 @@
-﻿# LUMO: Raspberry Pi 5 Controlled Smart Companion System
+# LUMO: Raspberry Pi 5 Controlled Smart Companion System
 
 A distributed IoT smart desk clock and companion system featuring:
 - **Raspberry Pi 5 ("The Brain")**: Handles Spotify API, Open-Meteo weather, multi-alarm scheduling, task syncing, circadian emotion logic, and serves a modern glassmorphic web dashboard.
@@ -67,7 +67,7 @@ Install the following via the Arduino IDE Library Manager:
 ```bash
 python3 main.py
 ```
-- Web dashboard will be live at: `http://<your-pi-ip>:8000` (or `http://lumo.local:8000`).
+- Web dashboard will be live at: `http://<your-pi-ip>:8080` (or `http://lumo.local:8080`).
 - WebSocket server for the ESP32 will listen on: `ws://0.0.0.0:8765`.
 
 ### Setting up Auto-Start Service (systemd):

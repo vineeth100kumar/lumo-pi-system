@@ -1,11 +1,11 @@
-﻿import os
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # Server Ports & Hostname
 WS_PORT = int(os.getenv("WS_PORT", 8765))
-HTTP_PORT = int(os.getenv("HTTP_PORT", 8000))
+HTTP_PORT = int(os.getenv("HTTP_PORT", 8080))
 MDNS_NAME = os.getenv("MDNS_NAME", "lumo")
 
 # Spotify API Credentials
