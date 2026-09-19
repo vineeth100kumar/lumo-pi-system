@@ -9,18 +9,15 @@ uint8_t artBuf[20004];
 bool newArtReady = false;
 
 static const uint16_t COLOR_BG_BLACK  = 0x0000;
-static const uint16_t COLOR_BG_NAVY   = 0x08A5; // tft.color565(10, 20, 45)
-static const uint16_t COLOR_HEADER    = 0x08A5;
-static const uint16_t COLOR_TIME_BAR  = 0x0842; // tft.color565(8, 10, 20)
-static const uint16_t COLOR_SMILE     = 0x077F; // Cyan smile
+static const uint16_t COLOR_BG_STEALTH= 0x0842; // Deep stealth black/navy
+static const uint16_t COLOR_HEADER    = 0x0842;
+static const uint16_t COLOR_TIME_BAR  = 0x0000;
 static const uint16_t COLOR_WHITE     = 0xFFFF;
-static const uint16_t COLOR_MUTED     = 0x7BEF;
-static const uint16_t COLOR_ACCENT    = 0x2BDF;
-static const uint16_t COLOR_GREEN     = 0x1DB4;
-static const uint16_t COLOR_RED_PULSE = 0xD800;
+static const uint16_t COLOR_MUTED     = 0x632C; // Slate gray
+static const uint16_t COLOR_ACCENT    = 0x073F; // Electric Cyan
+static const uint16_t COLOR_GREEN     = 0x07E6; // Matrix Green
+static const uint16_t COLOR_RED_PULSE = 0xF8A4; // Tactical Red
 static const uint16_t COLOR_RED_DARK  = 0x7800;
-static const uint16_t COLOR_BLUSH     = 0xFBAF; // Soft pink blush
-static const uint16_t COLOR_HOT_PINK  = 0xF9B3; // Heart eyes
 
 static int lastMinuteDrawn = -1;
 static ScreenMode lastModeDrawn = SCREEN_CONNECTING;
@@ -55,7 +52,8 @@ void drawTimeBar(const LumoState& s, bool force) {
   if (!force && s.m == lastMinuteDrawn) return;
   lastMinuteDrawn = s.m;
 
-  tft.fillRect(0, 202, 320, 38, COLOR_TIME_BAR);
+  tft.fillRect(0, 204, 320, 36, COLOR_TIME_BAR);
+  tft.drawFastHLine(20, 204, 280, tft.color565(30, 35, 45));
 
   char timeBuf[16];
   uint8_t dispH = s.h % 12;
@@ -68,66 +66,70 @@ void drawTimeBar(const LumoState& s, bool force) {
   tft.setFont(NULL);
   tft.setTextSize(2);
   tft.setTextColor(COLOR_WHITE);
-  tft.setCursor(14, 212);
+  tft.setCursor(20, 214);
   tft.print(timeBuf);
 
   tft.setTextColor(COLOR_MUTED);
-  tft.setCursor(195, 212);
+  tft.setCursor(195, 214);
   tft.print(dateBuf);
 }
 
-static void drawVectorHeart(int cx, int cy, int size, uint16_t color) {
-  int r = size / 2;
-  tft.fillCircle(cx - r/2, cy - r/4, r/2, color);
-  tft.fillCircle(cx + r/2, cy - r/4, r/2, color);
-  tft.fillTriangle(cx - r, cy, cx + r, cy, cx, cy + size, color);
-}
-
-static void drawSingleEye(int cx, int cy, int w, int h, int r, float eyelid, uint16_t color, bool isWinking, bool isHeart, bool isHappy) {
-  if (isHeart) {
-    drawVectorHeart(cx, cy - 4, 34, COLOR_HOT_PINK);
+// Sleek Cybernetic Eye (56x48px, r=8, determined angular brow)
+static void drawCyberEye(int cx, int cy, int w, int h, int r, float eyelid, uint16_t color, bool isLeft, int browSlant, bool isStandby) {
+  if (isStandby || eyelid <= 0.12f) {
+    // Sleek horizontal low-power visor slit (---)
+    tft.fillRoundRect(cx - w/2, cy - 3, w, 6, 2, color);
     return;
   }
 
-  if (isHappy) {
-    // Upward crescent arch (^ ^)
-    tft.fillRoundRect(cx - 24, cy - 10, 48, 26, 12, color);
-    tft.fillRoundRect(cx - 27, cy - 2, 54, 28, 12, COLOR_BG_NAVY);
-    return;
-  }
-
-  if (isWinking || eyelid <= 0.15f) {
-    // Cute curved wink line
-    tft.fillRoundRect(cx - 22, cy + 4, 44, 6, 3, color);
-    return;
-  }
-
-  // Large smooth stadium capsule eye
+  // Base Visor Rectangle with beveled/rounded corners
   tft.fillRoundRect(cx - w/2, cy - h/2, w, h, r, color);
 
-  // Glassy Specular Catchlight (white rounded reflection glint)
-  tft.fillRoundRect(cx + 7, cy - h/2 + 8, 10, 10, 4, COLOR_WHITE);
-  tft.fillCircle(cx + 4, cy - h/2 + 24, 3, COLOR_WHITE);
-
-  // Eyelid masking from top if partially closed
+  // Eyelid masking from top (smooth shutter blink)
   if (eyelid < 0.95f) {
     int clipH = (int)(h * (1.0f - eyelid));
-    tft.fillRect(cx - w/2 - 2, cy - h/2 - 2, w + 4, clipH + 2, COLOR_BG_NAVY);
+    tft.fillRect(cx - w/2 - 2, cy - h/2 - 2, w + 4, clipH + 2, COLOR_BG_STEALTH);
   }
+
+  // Angular Brow Slant (Inward = Determined/Cool, Outward = Curious)
+  if (browSlant > 0) {
+    int slantH = min(browSlant, 18);
+    if (isLeft) {
+      // Slant inner top corner (right side of left eye)
+      tft.fillTriangle(cx + w/2 - 20, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+    } else {
+      // Slant inner top corner (left side of right eye)
+      tft.fillTriangle(cx - w/2 - 2, cy - h/2 - 1, cx - w/2 + 20, cy - h/2 - 1, cx - w/2 - 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+    }
+  } else if (browSlant < 0) {
+    int slantH = min(-browSlant, 14);
+    if (isLeft) {
+      tft.fillTriangle(cx - w/2 - 2, cy - h/2 - 1, cx - w/2 + 16, cy - h/2 - 1, cx - w/2 - 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+    } else {
+      tft.fillTriangle(cx + w/2 - 16, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+    }
+  }
+
+  // High-Tech Cyber Catchlight (horizontal energy slit, 12x4px)
+  tft.fillRoundRect(cx + 4, cy - h/2 + 6, 14, 4, 2, COLOR_WHITE);
 }
 
 static void drawFaceFull(const LumoState& s) {
-  tft.fillScreen(COLOR_BG_NAVY);
+  tft.fillScreen(COLOR_BG_STEALTH);
 
   tft.fillRect(0, 0, 320, 32, COLOR_HEADER);
   tft.setFont(NULL);
   tft.setTextSize(2);
   tft.setTextColor(COLOR_WHITE);
-  int16_t x1, y1; uint16_t w, h;
-  tft.getTextBounds("LUMO", 0, 0, &x1, &y1, &w, &h);
-  tft.setCursor((320 - w) / 2, 8);
-  tft.print("LUMO");
-  tft.drawFastHLine(60, 30, 200, tft.color565(30, 60, 110));
+  tft.setCursor(16, 8);
+  tft.print("LUMO // SYSTEM");
+
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_MUTED);
+  tft.setCursor(240, 12);
+  tft.print("v1.3.0");
+
+  tft.drawFastHLine(16, 30, 288, tft.color565(35, 45, 60));
 
   drawTimeBar(s, true);
 }
@@ -136,84 +138,86 @@ static void drawFaceEyes(const LumoState& s) {
   int gx = animatorGetGazeX();
   int gy = animatorGetGazeY();
 
-  // Music dancing bounce
-  if (animatorGetAnim() == ANIM_DANCE) {
-    gy += (int)(sin(millis() / 120.0f) * 7.0f);
+  AnimType anim = animatorGetAnim();
+
+  // Audio beat groove bounce
+  if (anim == ANIM_DANCE) {
+    gy += (int)(sin(millis() / 110.0f) * 6.0f);
   }
 
-  int lx = 105 + gx;
-  int rx = 215 + gx;
-  int cy = 102 + gy;
+  int lx = 100 + gx;
+  int rx = 220 + gx;
+  int cy = 104 + gy;
 
-  // Clear animation dirty-rectangle
-  tft.fillRect(40, 36, 240, 164, COLOR_BG_NAVY);
+  // Clear animation area
+  tft.fillRect(30, 34, 260, 166, COLOR_BG_STEALTH);
 
-  // Check notification banner
+  // Notification Banner
   if (s.notif_active && (millis() - s.notif_start < 4500)) {
-    tft.fillRoundRect(16, 38, 288, 50, 10, tft.color565(25, 45, 80));
-    tft.drawRoundRect(16, 38, 288, 50, 10, COLOR_ACCENT);
+    tft.fillRoundRect(14, 36, 292, 48, 8, tft.color565(20, 25, 35));
+    tft.drawRoundRect(14, 36, 292, 48, 8, COLOR_ACCENT);
 
     tft.setTextSize(1);
     tft.setTextColor(COLOR_ACCENT);
-    tft.setCursor(26, 44);
-    tft.printf("[%s] %s", s.notif_app, s.notif_title);
+    tft.setCursor(24, 42);
+    tft.printf("// ALERT: %s [%s]", s.notif_title, s.notif_app);
 
     tft.setTextSize(2);
     tft.setTextColor(COLOR_WHITE);
-    tft.setCursor(26, 58);
+    tft.setCursor(24, 56);
     char cutBody[24];
     strncpy(cutBody, s.notif_body, sizeof(cutBody) - 1);
     cutBody[23] = '\0';
     tft.print(cutBody);
 
-    cy += 14; // Push eyes down slightly when banner is showing
+    cy += 16;
   }
 
-  AnimType anim = animatorGetAnim();
   float el = animatorGetEyelidL();
   float er = animatorGetEyelidR();
+  int   bl = animatorGetBrowL();
+  int   br = animatorGetBrowR();
 
-  uint16_t eyeCol = (s.eye_color != 0) ? s.eye_color : COLOR_SMILE;
+  uint16_t eyeCol = (s.eye_color != 0) ? s.eye_color : COLOR_ACCENT;
+  if (anim == ANIM_ALERT) eyeCol = COLOR_RED_PULSE;
 
-  bool isHeart = (anim == ANIM_HEART);
-  bool isHappy = (anim == ANIM_HAPPY);
+  bool isStandby = (anim == ANIM_STANDBY || s.schedule == SCHED_SLEEP);
 
-  // Draw Left & Right Eyes (52x68px, r=16)
-  drawSingleEye(lx, cy, 52, 68, 16, el, eyeCol, (anim == ANIM_WINK_L), isHeart, isHappy);
-  drawSingleEye(rx, cy, 52, 68, 16, er, eyeCol, (anim == ANIM_WINK_R), isHeart, isHappy);
+  // Draw High-Tech Cyber Visor Eyes (56x48px, r=8)
+  drawCyberEye(lx, cy, 56, 48, 8, el, eyeCol, true,  bl, isStandby);
+  drawCyberEye(rx, cy, 56, 48, 8, er, eyeCol, false, br, isStandby);
 
-  // Cute soft blush marks below each eye
-  tft.fillRoundRect(lx - 14, cy + 44, 28, 7, 3, COLOR_BLUSH);
-  tft.fillRoundRect(rx - 14, cy + 44, 28, 7, 3, COLOR_BLUSH);
-
-  // Music Notes floating when dancing
-  if (anim == ANIM_DANCE) {
-    tft.setTextSize(2);
-    tft.setTextColor(COLOR_WHITE);
-    tft.setCursor(lx - 28, cy - 35);
-    tft.print("♫");
-    tft.setCursor(rx + 18, cy - 40);
-    tft.print("♪");
+  // Cyber Scanner Beam (ANIM_SCAN)
+  if (anim == ANIM_SCAN) {
+    int scanX = 50 + (int)((sin(millis() / 200.0f) + 1.0f) * 110.0f);
+    tft.drawFastVLine(scanX, cy - 24, 48, COLOR_WHITE);
+    tft.drawFastVLine(scanX + 1, cy - 24, 48, eyeCol);
   }
 
-  // Expressive Mouth
-  if (animatorYawning()) {
-    tft.fillRoundRect(150, cy + 34, 20, 26, 10, eyeCol);
-  } else if (animatorSmileVisible() && !isHeart && !isHappy) {
-    int mcx = 160 + gx, mcy = cy + 42, r = 20;
-    if (s.mood == MOOD_SAD) {
-      for (int x = -r; x <= r; x++) {
-        int dy = (int)(sqrt(r * r - x * x) / 4.2f);
-        tft.drawPixel(mcx + x, mcy + 6 - dy, eyeCol);
-      }
-    } else if (s.mood == MOOD_BORED) {
-      tft.drawFastHLine(mcx - 14, mcy + 2, 28, eyeCol);
+  // Audio Equalizer tick marks during beat
+  if (anim == ANIM_DANCE) {
+    tft.drawFastHLine(lx - 24, cy + 34, 48, eyeCol);
+    tft.drawFastHLine(rx - 24, cy + 34, 48, eyeCol);
+    int eqH = (int)(abs(sin(millis() / 150.0f)) * 10.0f);
+    tft.fillRect(156, cy + 28 - eqH, 8, eqH * 2, eyeCol);
+  }
+
+  // Sleek Tech Mouth / Accents
+  if (!isStandby && anim != ANIM_DANCE) {
+    int mcx = 160 + gx, mcy = cy + 36;
+    if (anim == ANIM_SMIRK) {
+      // Confident smirk
+      tft.drawLine(mcx - 12, mcy + 2, mcx + 14, mcy - 2, eyeCol);
+      tft.drawLine(mcx - 12, mcy + 3, mcx + 14, mcy - 1, eyeCol);
+    } else if (anim == ANIM_FOCUSED) {
+      // Minimalist sensor line
+      tft.drawFastHLine(mcx - 16, mcy, 32, eyeCol);
+      tft.drawFastHLine(mcx - 8, mcy + 3, 16, COLOR_MUTED);
+    } else if (s.mood == MOOD_SAD) {
+      tft.drawFastHLine(mcx - 12, mcy + 4, 24, eyeCol);
     } else {
-      for (int x = -r; x <= r; x++) {
-        int dy = (int)(sqrt(r * r - x * x) / 4.2f);
-        tft.drawPixel(mcx + x, mcy + dy, eyeCol);
-        tft.drawPixel(mcx + x, mcy + dy + 1, eyeCol);
-      }
+      // Clean level cyber smile
+      tft.drawFastHLine(mcx - 14, mcy + 2, 28, eyeCol);
     }
   }
 }
@@ -385,7 +389,7 @@ static void drawTasksScreen(const LumoState& s) {
     tft.setTextSize(2);
     tft.setTextColor(COLOR_ACCENT);
     tft.setCursor(12, y);
-    tft.print("o ");
+    tft.print("> ");
 
     tft.setTextColor(COLOR_WHITE);
     char cut[22];
@@ -419,7 +423,7 @@ static void drawAlarmScreen(const LumoState& s) {
   tft.setTextSize(3);
   tft.setTextColor(COLOR_WHITE);
   int16_t x1, y1; uint16_t w, h;
-  const char* title = "WAKE UP!";
+  const char* title = "ALERT: WAKE UP";
   tft.getTextBounds(title, 0, 0, &x1, &y1, &w, &h);
   tft.setCursor((320 - w) / 2, 45);
   tft.print(title);
@@ -443,10 +447,10 @@ static void drawConnectingScreen(const LumoState& s) {
   dotCount = (dotCount + 1) % 4;
 
   tft.setFont(NULL);
-  tft.fillScreen(COLOR_BG_NAVY);
+  tft.fillScreen(COLOR_BG_STEALTH);
 
-  drawSingleEye(105, 100, 48, 62, 14, 1.0f, COLOR_ACCENT, false, false, false);
-  drawSingleEye(215, 100, 48, 62, 14, 1.0f, COLOR_ACCENT, false, false, false);
+  drawCyberEye(100, 100, 56, 48, 8, 1.0f, COLOR_ACCENT, true, 0, false);
+  drawCyberEye(220, 100, 56, 48, 8, 1.0f, COLOR_ACCENT, false, 0, false);
 
   tft.setTextSize(2);
   tft.setTextColor(COLOR_WHITE);
@@ -460,7 +464,7 @@ static void drawConnectingScreen(const LumoState& s) {
   tft.setTextSize(1);
   tft.setTextColor(COLOR_MUTED);
   char ipBuf[40];
-  snprintf(ipBuf, sizeof(ipBuf), "Server IP: %s", PI_HOSTNAME);
+  snprintf(ipBuf, sizeof(ipBuf), "Host IP: %s", PI_HOSTNAME);
   tft.getTextBounds(ipBuf, 0, 0, &x1, &y1, &w, &h);
   tft.setCursor((320 - w) / 2, 195);
   tft.print(ipBuf);

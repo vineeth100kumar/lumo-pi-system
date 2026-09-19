@@ -37,7 +37,7 @@
 #define V_TOL   0.05f
 
 // ===================== FIRMWARE =====================
-#define FW_VERSION "1.2.0"
+#define FW_VERSION "1.3.0"
 
 // ===================== ENUMS =====================
 enum Button       { BTN_NONE, BTN_OK, BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT };
@@ -45,7 +45,7 @@ enum ScreenMode   { SCREEN_FACE, SCREEN_CLOCK, SCREEN_SYSTEM, SCREEN_SPOTIFY, SC
 enum LumoMood     { MOOD_NORMAL, MOOD_HAPPY, MOOD_BORED, MOOD_SAD, MOOD_EXCITED };
 enum CharSchedule { SCHED_AWAKE, SCHED_DROWSY, SCHED_SLEEP };
 enum NeoMode      { NEO_WARM, NEO_COLOR, NEO_BREATHE, NEO_OFF, NEO_ALARM };
-enum AnimType     { ANIM_NORMAL, ANIM_WINK_L, ANIM_WINK_R, ANIM_HEART, ANIM_DANCE, ANIM_SURPRISE, ANIM_HAPPY, ANIM_SLEEPY, ANIM_LOOK };
+enum AnimType     { ANIM_NORMAL, ANIM_FOCUSED, ANIM_SMIRK, ANIM_SCAN, ANIM_DANCE, ANIM_ALERT, ANIM_CURIOUS, ANIM_STANDBY, ANIM_LOOK };
 
 // ===================== CENTRAL STATE STRUCT =====================
 struct LumoState {
@@ -75,9 +75,9 @@ struct LumoState {
   uint8_t ram_pct  = 0;
   uint8_t disk_pct = 0;
 
-  // Advanced Vector Face & Animation State
+  // Cybernetic Face & Animation State
   AnimType anim_type = ANIM_NORMAL;
-  uint16_t eye_color = 0x077F; // Default vibrant Cyan
+  uint16_t eye_color = 0x073F; // Default Electric Cyan
   int8_t   gaze_x    = 0;
   int8_t   gaze_y    = 0;
 

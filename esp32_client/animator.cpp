@@ -8,38 +8,34 @@ static AnimType     currentAnim     = ANIM_NORMAL;
 
 static bool needsRedraw = true;
 
-// Smooth gaze positions (lerped at 60 FPS)
+// Gaze offset
 static float targetGazeX = 0.0f;
 static float targetGazeY = 0.0f;
 static float currGazeX   = 0.0f;
 static float currGazeY   = 0.0f;
 
-// Eyelids (0.0 = fully closed, 1.0 = fully open)
+// Eyelids (0.0 = closed, 1.0 = open)
 static float targetEyelidL = 1.0f;
 static float targetEyelidR = 1.0f;
 static float currEyelidL   = 1.0f;
 static float currEyelidR   = 1.0f;
 
-// Animation timer
+// Brow slant angles (positive = inward determined, negative = outward curious)
+static float targetBrowL = 0.0f;
+static float targetBrowR = 0.0f;
+static float currBrowL   = 0.0f;
+static float currBrowR   = 0.0f;
+
+// Timers
 static unsigned long animStartTime = 0;
 static unsigned long animDuration  = 0;
-
-// Natural blink timer
 static unsigned long lastBlinkStart = 0;
-static unsigned long blinkInterval  = 4000;
+static unsigned long blinkInterval  = 4500;
 static bool          isBlinking     = false;
 
 static unsigned long getBlinkGap() {
   if (currentSchedule == SCHED_SLEEP) return 999999;
-  if (currentSchedule == SCHED_DROWSY) return random(6000, 10000);
-
-  switch (currentMood) {
-    case MOOD_HAPPY:   return random(3000, 5000);
-    case MOOD_BORED:   return random(7000, 11000);
-    case MOOD_SAD:     return random(9000, 14000);
-    case MOOD_EXCITED: return random(2000, 3500);
-    default:           return random(4000, 7000);
-  }
+  return random(3500, 6500);
 }
 
 void animatorInit() {
@@ -51,6 +47,8 @@ void animatorInit() {
   currEyelidR    = 1.0f;
   currGazeX      = 0.0f;
   currGazeY      = 0.0f;
+  currBrowL      = 0.0f;
+  currBrowR      = 0.0f;
 }
 
 void animatorSetMood(LumoMood mood, CharSchedule sched) {
@@ -63,23 +61,41 @@ void animatorSetMood(LumoMood mood, CharSchedule sched) {
 }
 
 void animatorSetAnim(AnimType anim, int8_t gx, int8_t gy, unsigned long durationMs) {
-  currentAnim    = anim;
-  targetGazeX    = (float)gx;
-  targetGazeY    = (float)gy;
-  animStartTime  = millis();
-  animDuration   = durationMs;
-  needsRedraw    = true;
+  currentAnim   = anim;
+  targetGazeX   = (float)gx;
+  targetGazeY   = (float)gy;
+  animStartTime = millis();
+  animDuration  = durationMs;
+  needsRedraw   = true;
 
-  if (anim == ANIM_WINK_L) {
-    targetEyelidL = 0.0f;
+  if (anim == ANIM_FOCUSED) {
+    targetBrowL   = 12.0f; // Determined sharp brow
+    targetBrowR   = 12.0f;
+    targetEyelidL = 0.85f;
+    targetEyelidR = 0.85f;
+  } else if (anim == ANIM_SMIRK) {
+    targetBrowL   = 14.0f;
+    targetBrowR   = -6.0f; // Cocked brow
+    targetEyelidL = 0.90f;
     targetEyelidR = 1.0f;
-  } else if (anim == ANIM_WINK_R) {
+  } else if (anim == ANIM_CURIOUS) {
+    targetBrowL   = -10.0f;
+    targetBrowR   = 8.0f;
     targetEyelidL = 1.0f;
+    targetEyelidR = 0.9f;
+  } else if (anim == ANIM_ALERT) {
+    targetBrowL   = 6.0f;
+    targetBrowR   = 6.0f;
+    targetEyelidL = 1.0f;
+    targetEyelidR = 1.0f;
+  } else if (anim == ANIM_STANDBY) {
+    targetBrowL   = 0.0f;
+    targetBrowR   = 0.0f;
+    targetEyelidL = 0.0f;
     targetEyelidR = 0.0f;
-  } else if (anim == ANIM_SLEEPY) {
-    targetEyelidL = 0.35f;
-    targetEyelidR = 0.35f;
   } else {
+    targetBrowL   = 0.0f;
+    targetBrowR   = 0.0f;
     targetEyelidL = 1.0f;
     targetEyelidR = 1.0f;
   }
@@ -88,22 +104,24 @@ void animatorSetAnim(AnimType anim, int8_t gx, int8_t gy, unsigned long duration
 void animatorTick() {
   unsigned long now = millis();
 
-  // 1. One-shot animation expiration
+  // 1. One-shot timeout
   if (animDuration > 0 && (now - animStartTime >= animDuration)) {
     animDuration  = 0;
     currentAnim   = ANIM_NORMAL;
     targetGazeX   = 0.0f;
     targetGazeY   = 0.0f;
+    targetBrowL   = 0.0f;
+    targetBrowR   = 0.0f;
     targetEyelidL = 1.0f;
     targetEyelidR = 1.0f;
     needsRedraw   = true;
   }
 
-  // 2. Natural local blinks (when not playing an overriding animation)
+  // 2. Snappy shutter blinks (85ms camera-shutter feel)
   if (currentSchedule == SCHED_SLEEP) {
     targetEyelidL = 0.0f;
     targetEyelidR = 0.0f;
-  } else if (currentAnim == ANIM_NORMAL || currentAnim == ANIM_LOOK) {
+  } else if (currentAnim == ANIM_NORMAL || currentAnim == ANIM_LOOK || currentAnim == ANIM_FOCUSED) {
     if (!isBlinking) {
       if (now - lastBlinkStart >= blinkInterval) {
         isBlinking     = true;
@@ -112,34 +130,39 @@ void animatorTick() {
         targetEyelidR  = 0.0f;
       }
     } else {
-      if (now - lastBlinkStart >= 120) {
+      if (now - lastBlinkStart >= 85) {
         isBlinking     = false;
         lastBlinkStart = now;
         blinkInterval  = getBlinkGap();
-        targetEyelidL  = 1.0f;
-        targetEyelidR  = 1.0f;
+        targetEyelidL  = (currentAnim == ANIM_FOCUSED) ? 0.85f : 1.0f;
+        targetEyelidR  = (currentAnim == ANIM_FOCUSED) ? 0.85f : 1.0f;
       }
     }
   }
 
-  // 3. Smooth 60 FPS interpolation (Lerp)
+  // 3. Smooth 60 FPS Lerp
   float oldGx = currGazeX, oldGy = currGazeY;
   float oldEl = currEyelidL, oldEr = currEyelidR;
+  float oldBl = currBrowL,   oldBr = currBrowR;
 
-  currGazeX += (targetGazeX - currGazeX) * 0.30f;
-  currGazeY += (targetGazeY - currGazeY) * 0.30f;
-  currEyelidL += (targetEyelidL - currEyelidL) * 0.38f;
-  currEyelidR += (targetEyelidR - currEyelidR) * 0.38f;
+  currGazeX   += (targetGazeX   - currGazeX)   * 0.35f;
+  currGazeY   += (targetGazeY   - currGazeY)   * 0.35f;
+  currEyelidL += (targetEyelidL - currEyelidL) * 0.45f;
+  currEyelidR += (targetEyelidR - currEyelidR) * 0.45f;
+  currBrowL   += (targetBrowL   - currBrowL)   * 0.35f;
+  currBrowR   += (targetBrowR   - currBrowR)   * 0.35f;
 
   if (fabs(currGazeX - targetGazeX) < 0.2f) currGazeX = targetGazeX;
   if (fabs(currGazeY - targetGazeY) < 0.2f) currGazeY = targetGazeY;
-  if (fabs(currEyelidL - targetEyelidL) < 0.05f) currEyelidL = targetEyelidL;
-  if (fabs(currEyelidR - targetEyelidR) < 0.05f) currEyelidR = targetEyelidR;
+  if (fabs(currEyelidL - targetEyelidL) < 0.04f) currEyelidL = targetEyelidL;
+  if (fabs(currEyelidR - targetEyelidR) < 0.04f) currEyelidR = targetEyelidR;
+  if (fabs(currBrowL - targetBrowL) < 0.2f) currBrowL = targetBrowL;
+  if (fabs(currBrowR - targetBrowR) < 0.2f) currBrowR = targetBrowR;
 
-  // If dynamic visual parameters shifted, trigger repaint
-  if (fabs(currGazeX - oldGx) > 0.4f || fabs(currGazeY - oldGy) > 0.4f ||
-      fabs(currEyelidL - oldEl) > 0.05f || fabs(currEyelidR - oldEr) > 0.05f ||
-      currentAnim == ANIM_DANCE) {
+  if (fabs(currGazeX - oldGx) > 0.3f || fabs(currGazeY - oldGy) > 0.3f ||
+      fabs(currEyelidL - oldEl) > 0.04f || fabs(currEyelidR - oldEr) > 0.04f ||
+      fabs(currBrowL - oldBl) > 0.3f   || fabs(currBrowR - oldBr) > 0.3f ||
+      currentAnim == ANIM_DANCE || currentAnim == ANIM_SCAN) {
     needsRedraw = true;
   }
 }
@@ -147,20 +170,18 @@ void animatorTick() {
 bool animatorNeedsRedraw() { return needsRedraw; }
 void animatorClearRedraw() { needsRedraw = false; }
 
-int   animatorGetGazeX()   { return (int)currGazeX; }
-int   animatorGetGazeY()   { return (int)currGazeY; }
-float animatorGetEyelidL() { return currEyelidL; }
-float animatorGetEyelidR() { return currEyelidR; }
-AnimType animatorGetAnim() { return currentAnim; }
+int      animatorGetGazeX()   { return (int)currGazeX; }
+int      animatorGetGazeY()   { return (int)currGazeY; }
+float    animatorGetEyelidL() { return currEyelidL; }
+float    animatorGetEyelidR() { return currEyelidR; }
+int      animatorGetBrowL()   { return (int)currBrowL; }
+int      animatorGetBrowR()   { return (int)currBrowR; }
+AnimType animatorGetAnim()    { return currentAnim; }
 
 bool animatorEyesOpen() {
-  return (currEyelidL > 0.2f || currEyelidR > 0.2f);
+  return (currEyelidL > 0.15f || currEyelidR > 0.15f);
 }
 
 bool animatorSmileVisible() {
   return (currentSchedule == SCHED_AWAKE);
-}
-
-bool animatorYawning() {
-  return (currentAnim == ANIM_SLEEPY);
 }

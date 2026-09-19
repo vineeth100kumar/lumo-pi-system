@@ -217,25 +217,25 @@
     </div>
   </div>
 
-  <!-- 2. LUMO Animation & Expression Studio -->
+  <!-- 2. LUMO Cybernetic Face Studio -->
   <div class="card">
-    <div class="card-title">Animation Studio & Eye Color</div>
+    <div class="card-title">Cybernetic Face & Optics Color</div>
     <div class="palette-row">
-      <div class="color-dot active" id="dotCyan" style="background:#00F0FF;" onclick="setEyeColor('cyan')" title="Cyan"></div>
-      <div class="color-dot" id="dotPink" style="background:#FF3399;" onclick="setEyeColor('pink')" title="Pink"></div>
-      <div class="color-dot" id="dotGreen" style="background:#00FF88;" onclick="setEyeColor('green')" title="Green"></div>
-      <div class="color-dot" id="dotGold" style="background:#FFCC00;" onclick="setEyeColor('gold')" title="Gold"></div>
-      <div class="color-dot" id="dotPurple" style="background:#B040FF;" onclick="setEyeColor('purple')" title="Purple"></div>
-      <div class="color-dot" id="dotWhite" style="background:#FFFFFF;" onclick="setEyeColor('white')" title="White"></div>
+      <div class="color-dot active" id="dotCyan" style="background:#00E5FF;" onclick="setEyeColor('cyan')" title="Electric Cyan"></div>
+      <div class="color-dot" id="dotAmber" style="background:#FFB300;" onclick="setEyeColor('amber')" title="Cyberpunk Amber"></div>
+      <div class="color-dot" id="dotGreen" style="background:#00FF66;" onclick="setEyeColor('green')" title="Matrix Green"></div>
+      <div class="color-dot" id="dotWhite" style="background:#E0F7FA;" onclick="setEyeColor('white')" title="Stealth White"></div>
+      <div class="color-dot" id="dotPurple" style="background:#9D00FF;" onclick="setEyeColor('purple')" title="Synthwave Violet"></div>
+      <div class="color-dot" id="dotRed" style="background:#FF1744;" onclick="setEyeColor('red')" title="Combat Red"></div>
     </div>
     <div class="anim-grid">
-      <button class="anim-btn" onclick="playAnim('wink_left')"><span class="icon">😜</span><span>Wink L</span></button>
-      <button class="anim-btn" onclick="playAnim('wink_right')"><span class="icon">😉</span><span>Wink R</span></button>
-      <button class="anim-btn" onclick="playAnim('heart')"><span class="icon">🥰</span><span>Love</span></button>
-      <button class="anim-btn" onclick="playAnim('dance')"><span class="icon">🎵</span><span>Dance</span></button>
-      <button class="anim-btn" onclick="playAnim('surprise')"><span class="icon">😮</span><span>Surprise</span></button>
-      <button class="anim-btn" onclick="playAnim('happy')"><span class="icon">😊</span><span>Happy</span></button>
-      <button class="anim-btn" onclick="playAnim('sleepy')"><span class="icon">😴</span><span>Sleepy</span></button>
+      <button class="anim-btn" onclick="playAnim('focused')"><span class="icon">🎯</span><span>Focus</span></button>
+      <button class="anim-btn" onclick="playAnim('smirk')"><span class="icon">😏</span><span>Smirk</span></button>
+      <button class="anim-btn" onclick="playAnim('scan')"><span class="icon">⚡</span><span>Scan</span></button>
+      <button class="anim-btn" onclick="playAnim('dance')"><span class="icon">🎵</span><span>Groove</span></button>
+      <button class="anim-btn" onclick="playAnim('curious')"><span class="icon">🧐</span><span>Curious</span></button>
+      <button class="anim-btn" onclick="playAnim('alert')"><span class="icon">🚨</span><span>Alert</span></button>
+      <button class="anim-btn" onclick="playAnim('standby')"><span class="icon">💤</span><span>Standby</span></button>
       <button class="anim-btn" onclick="playAnim('normal')"><span class="icon">🤖</span><span>Normal</span></button>
     </div>
   </div>
@@ -430,7 +430,7 @@
   }
 
   function updateActiveColorDot(color) {
-    const colors = ["cyan", "pink", "green", "gold", "purple", "white"];
+    const colors = ["cyan", "amber", "green", "white", "purple", "red"];
     colors.forEach(c => {
       const dot = document.getElementById("dot" + c.charAt(0).toUpperCase() + c.slice(1));
       if (dot) {

@@ -49,21 +49,21 @@ static void handleTextMessage(const String& payload) {
     unsigned long dur = doc["duration_ms"] | 2500;
 
     AnimType at = ANIM_NORMAL;
-    if (strcmp(animTypeStr, "wink_left") == 0)   at = ANIM_WINK_L;
-    else if (strcmp(animTypeStr, "wink_right") == 0) at = ANIM_WINK_R;
-    else if (strcmp(animTypeStr, "heart") == 0)      at = ANIM_HEART;
+    if (strcmp(animTypeStr, "focused") == 0)       at = ANIM_FOCUSED;
+    else if (strcmp(animTypeStr, "smirk") == 0)    at = ANIM_SMIRK;
+    else if (strcmp(animTypeStr, "scan") == 0)     at = ANIM_SCAN;
     else if (strcmp(animTypeStr, "dance") == 0 || strcmp(animTypeStr, "music_dance") == 0) at = ANIM_DANCE;
-    else if (strcmp(animTypeStr, "surprise") == 0)   at = ANIM_SURPRISE;
-    else if (strcmp(animTypeStr, "happy") == 0)      at = ANIM_HAPPY;
-    else if (strcmp(animTypeStr, "sleepy") == 0)     at = ANIM_SLEEPY;
-    else if (strcmp(animTypeStr, "look") == 0)       at = ANIM_LOOK;
+    else if (strcmp(animTypeStr, "alert") == 0)    at = ANIM_ALERT;
+    else if (strcmp(animTypeStr, "curious") == 0)  at = ANIM_CURIOUS;
+    else if (strcmp(animTypeStr, "standby") == 0)  at = ANIM_STANDBY;
+    else if (strcmp(animTypeStr, "look") == 0)     at = ANIM_LOOK;
 
     s.anim_type = at;
     s.flag_anim_changed = true;
     animatorSetAnim(at, gx, gy, dur);
   }
   else if (strcmp(cmd, "EYE_COLOR") == 0) {
-    uint16_t c565 = doc["rgb565"] | 0x077F;
+    uint16_t c565 = doc["rgb565"] | 0x073F;
     s.eye_color = c565;
     s.flag_anim_changed = true;
   }
