@@ -145,6 +145,25 @@
       border-radius: 12px; padding: 10px 12px; color: #fff; font-size: 0.9rem; outline: none;
     }
 
+    /* Color Palette */
+    .palette-row {
+      display: flex; gap: 10px; justify-content: space-around; margin: 10px 0 4px 0;
+    }
+    .color-dot {
+      width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+      border: 3px solid transparent; transition: all 0.2s;
+    }
+    .color-dot.active {
+      transform: scale(1.18); border-color: #fff; box-shadow: 0 0 14px rgba(255,255,255,0.7);
+    }
+    .anim-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px;
+    }
+    .anim-btn {
+      padding: 10px 4px; font-size: 0.78rem; border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .anim-btn .icon { font-size: 1.25rem; }
+
     #alarmBanner {
       display: none; background: var(--red); padding: 16px; border-radius: 16px;
       margin-bottom: 14px; text-align: center; animation: pulse 1s infinite alternate;
@@ -198,7 +217,30 @@
     </div>
   </div>
 
-  <!-- 2. Pi 5 Hardware Vitals -->
+  <!-- 2. LUMO Animation & Expression Studio -->
+  <div class="card">
+    <div class="card-title">Animation Studio & Eye Color</div>
+    <div class="palette-row">
+      <div class="color-dot active" id="dotCyan" style="background:#00F0FF;" onclick="setEyeColor('cyan')" title="Cyan"></div>
+      <div class="color-dot" id="dotPink" style="background:#FF3399;" onclick="setEyeColor('pink')" title="Pink"></div>
+      <div class="color-dot" id="dotGreen" style="background:#00FF88;" onclick="setEyeColor('green')" title="Green"></div>
+      <div class="color-dot" id="dotGold" style="background:#FFCC00;" onclick="setEyeColor('gold')" title="Gold"></div>
+      <div class="color-dot" id="dotPurple" style="background:#B040FF;" onclick="setEyeColor('purple')" title="Purple"></div>
+      <div class="color-dot" id="dotWhite" style="background:#FFFFFF;" onclick="setEyeColor('white')" title="White"></div>
+    </div>
+    <div class="anim-grid">
+      <button class="anim-btn" onclick="playAnim('wink_left')"><span class="icon">😜</span><span>Wink L</span></button>
+      <button class="anim-btn" onclick="playAnim('wink_right')"><span class="icon">😉</span><span>Wink R</span></button>
+      <button class="anim-btn" onclick="playAnim('heart')"><span class="icon">🥰</span><span>Love</span></button>
+      <button class="anim-btn" onclick="playAnim('dance')"><span class="icon">🎵</span><span>Dance</span></button>
+      <button class="anim-btn" onclick="playAnim('surprise')"><span class="icon">😮</span><span>Surprise</span></button>
+      <button class="anim-btn" onclick="playAnim('happy')"><span class="icon">😊</span><span>Happy</span></button>
+      <button class="anim-btn" onclick="playAnim('sleepy')"><span class="icon">😴</span><span>Sleepy</span></button>
+      <button class="anim-btn" onclick="playAnim('normal')"><span class="icon">🤖</span><span>Normal</span></button>
+    </div>
+  </div>
+
+  <!-- 3. Pi 5 Hardware Vitals -->
   <div class="card">
     <div class="card-title">Pi 5 System Vitals</div>
     <div class="stats-grid">
@@ -221,7 +263,7 @@
     </div>
   </div>
 
-  <!-- 3. Ambient Lighting -->
+  <!-- 4. Ambient Lighting -->
   <div class="card">
     <div class="card-title">Ambient Lighting</div>
     <div class="btn-group">
@@ -242,9 +284,9 @@
     </div>
   </div>
 
-  <!-- 4. Music Remote -->
+  <!-- 5. Music Remote (Spotify & iPhone Bluetooth) -->
   <div class="card">
-    <div class="card-title">Spotify Player</div>
+    <div class="card-title">Music Player <span id="musicSourceBadge" style="font-size:0.75rem; color:var(--accent); text-transform:none;">(Spotify / iPhone)</span></div>
     <div style="text-align:center; margin-bottom: 12px;">
       <div id="spTitle" style="font-size:1.05rem; font-weight:600;">No Track Playing</div>
       <div id="spArtist" style="font-size:0.85rem; color:var(--muted); margin-top:2px;">Idle</div>
@@ -254,6 +296,17 @@
       <button onclick="postApi('/api/spotify/toggle')" class="primary">Play / Pause</button>
       <button onclick="postApi('/api/spotify/next')">Next</button>
     </div>
+  </div>
+
+  <!-- 6. iPhone Smartwatch Alerts -->
+  <div class="card">
+    <div class="card-title">iPhone Notification Alert (Haptic Buzz)</div>
+    <div class="add-row" style="margin-top:0;">
+      <input type="text" id="notifApp" value="WhatsApp" style="max-width:110px;" placeholder="App">
+      <input type="text" id="notifTitle" value="Alex" style="max-width:110px;" placeholder="Sender">
+      <input type="text" id="notifBody" value="Hey, dinner is ready!" placeholder="Message">
+    </div>
+    <button onclick="sendNotificationAlert()" class="primary" style="width:100%; margin-top:10px;">Test Notification on LUMO</button>
   </div>
 
   <!-- 5. Alarms Manager -->
@@ -332,6 +385,29 @@
         updateScreenButtons(data.screen);
       }
 
+      if (data.eye_color) {
+        updateActiveColorDot(data.eye_color);
+      }
+
+      // Music display (Spotify or iPhone Bluetooth / YouTube Music)
+      let title = "No Track Playing";
+      let artist = "Idle";
+      let sourceText = "";
+      if (data.ios_music && (data.ios_music.playing || data.ios_music.title)) {
+        title = data.ios_music.title || "Unknown Track";
+        artist = data.ios_music.artist || "iPhone Audio";
+        sourceText = "(iPhone / YouTube Music)";
+      } else if (data.spotify && data.spotify.playing) {
+        title = data.spotify.title || "Playing on Spotify";
+        artist = "Spotify";
+        sourceText = "(Spotify)";
+      }
+      document.getElementById("spTitle").textContent = title;
+      document.getElementById("spArtist").textContent = artist;
+      if (sourceText) {
+        document.getElementById("musicSourceBadge").textContent = sourceText;
+      }
+
       if (data.system) {
         document.getElementById("valCpuTemp").textContent = `${data.system.cpu_temp} °C`;
         document.getElementById("valCpuLoad").textContent = `${data.system.cpu_pct} %`;
@@ -342,6 +418,33 @@
       const banner = document.getElementById("alarmBanner");
       banner.style.display = data.alarm_ringing ? "block" : "none";
     } catch(e) {}
+  }
+
+  async function playAnim(anim) {
+    await postApi("/api/animation/play", { anim: anim, duration: (anim === 'heart' ? 3.5 : 2.5) });
+  }
+
+  async function setEyeColor(color) {
+    updateActiveColorDot(color);
+    await postApi("/api/animation/color", { color: color });
+  }
+
+  function updateActiveColorDot(color) {
+    const colors = ["cyan", "pink", "green", "gold", "purple", "white"];
+    colors.forEach(c => {
+      const dot = document.getElementById("dot" + c.charAt(0).toUpperCase() + c.slice(1));
+      if (dot) {
+        if (c === color.toLowerCase()) dot.classList.add("active");
+        else dot.classList.remove("active");
+      }
+    });
+  }
+
+  async function sendNotificationAlert() {
+    const app = document.getElementById("notifApp").value || "iPhone";
+    const title = document.getElementById("notifTitle").value || "Alert";
+    const body = document.getElementById("notifBody").value || "Test Notification";
+    await postApi("/api/notification", { app, title, body });
   }
 
   async function fetchAlarms() {

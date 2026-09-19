@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESPmDNS.h>
-
+#include <time.h>
 #include "config.h"
 #include "peripherals.h"
 #include "animator.h"
@@ -19,7 +18,7 @@ void switchScreen(ScreenMode next) {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n--- LUMO ESP32-C3 DISPLAY NODE ---");
+  Serial.println("\n=== LUMO Companion Firmware v1.2.0 Starting ===");
 
   ledcAttach(BUZZER_PIN, HAPTIC_FREQ, HAPTIC_RES);
   ledcWrite(BUZZER_PIN, 255);
@@ -27,33 +26,36 @@ void setup() {
   initNeoPixels();
   displayInit();
 
-  displayDrawScreen(SCREEN_CONNECTING, lumoState, true);
+  tft.setFont(NULL);
+  tft.setTextSize(2);
+  tft.setTextColor(0xFFFF);
+  tft.setCursor(20, 100);
+  tft.print("Connecting to Wi-Fi...");
 
-  Serial.printf("[WIFI] Connecting to %s", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  unsigned long startWifi = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startWifi < 12000) {
-    delay(300);
+
+  unsigned long startAttempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+    delay(250);
     Serial.print(".");
   }
   Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("[WIFI] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-    WiFi.setSleep(false);
-
-    if (MDNS.begin("esp32-lumo")) {
-      Serial.println("[MDNS] Started");
-    }
-
+    Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET, NTP_SERVER1, NTP_SERVER2);
+    WiFi.setSleep(false);
   } else {
-    Serial.println("[WIFI] Connection failed. Will retry in loop.");
+    Serial.println("[WiFi] Connection failed, continuing offline...");
   }
 
   wsInit(lumoState);
   wsConnect();
   animatorInit();
+
+  currentScreen = SCREEN_CONNECTING;
+  displayDrawScreen(SCREEN_CONNECTING, lumoState, true);
 }
 
 void loop() {
@@ -72,18 +74,15 @@ void loop() {
 
   animatorTick();
 
-  if (!wsConnected()) {
-    if (currentScreen != SCREEN_CONNECTING) {
-      switchScreen(SCREEN_CONNECTING);
-    }
-    static unsigned long lastConnDraw = 0;
-    if (millis() - lastConnDraw > 500) {
-      lastConnDraw = millis();
-      displayDrawScreen(SCREEN_CONNECTING, lumoState, false);
-    }
-    delay(10);
-    return;
-  } else if (currentScreen == SCREEN_CONNECTING) {
+  // Transition from CONNECTING to FACE once Pi sends data or connects
+  if (currentScreen == SCREEN_CONNECTING && wsConnected()) {
+    switchScreen(SCREEN_FACE);
+  }
+
+  // Handle alarm triggered from Pi
+  if (lumoState.alarm_ringing && currentScreen != SCREEN_ALARM) {
+    switchScreen(SCREEN_ALARM);
+  } else if (!lumoState.alarm_ringing && currentScreen == SCREEN_ALARM) {
     switchScreen(SCREEN_FACE);
   }
 
@@ -93,17 +92,19 @@ void loop() {
     switchScreen(lumoState.next_screen);
   }
 
+  // Screen-specific updates
   if (currentScreen == SCREEN_FACE) {
-    if (animatorNeedsRedraw()) {
+    if (animatorNeedsRedraw() || lumoState.flag_anim_changed) {
       displayDrawScreen(SCREEN_FACE, lumoState, false);
       animatorClearRedraw();
+      lumoState.flag_anim_changed = false;
     }
     drawTimeBar(lumoState, false);
   }
   else if (currentScreen == SCREEN_CLOCK) {
-    static int lastMin = -1;
-    if (lumoState.m != lastMin) {
-      lastMin = lumoState.m;
+    static int lastM = -1;
+    if (lumoState.m != lastM) {
+      lastM = lumoState.m;
       displayDrawScreen(SCREEN_CLOCK, lumoState, false);
     }
   }
@@ -117,10 +118,7 @@ void loop() {
     static unsigned long lastProgressTick = 0;
     if (lumoState.sp_playing && millis() - lastProgressTick >= 500) {
       lastProgressTick = millis();
-      lumoState.sp_progress_ms += 500;
-      if (lumoState.sp_progress_ms > lumoState.sp_duration_ms) {
-        lumoState.sp_progress_ms = lumoState.sp_duration_ms;
-      }
+      lumoState.sp_progress_ms = min(lumoState.sp_progress_ms + 500, lumoState.sp_duration_ms);
       displayDrawScreen(SCREEN_SPOTIFY, lumoState, false);
     }
     if (lumoState.flag_spotify_changed || newArtReady) {
@@ -131,22 +129,25 @@ void loop() {
   else if (currentScreen == SCREEN_TASKS) {
     if (lumoState.flag_tasks_changed) {
       lumoState.flag_tasks_changed = false;
-      displayDrawScreen(SCREEN_TASKS, lumoState, true);
+      displayDrawScreen(SCREEN_TASKS, lumoState, false);
     }
   }
   else if (currentScreen == SCREEN_ALARM) {
-    neoAlarmFlash();
-    static unsigned long lastHapticPulse = 0;
-    if (millis() - lastHapticPulse > 600) {
-      lastHapticPulse = millis();
-      hapticPulse(150);
-    }
-    static unsigned long lastAlarmDraw = 0;
-    if (millis() - lastAlarmDraw > 300) {
-      lastAlarmDraw = millis();
+    static unsigned long lastAlarmTick = 0;
+    if (millis() - lastAlarmTick >= 500) {
+      lastAlarmTick = millis();
+      neoAlarmFlash();
+      hapticPulse(80);
       displayDrawScreen(SCREEN_ALARM, lumoState, false);
     }
   }
+  else if (currentScreen == SCREEN_CONNECTING) {
+    static unsigned long lastConnTick = 0;
+    if (millis() - lastConnTick >= 600) {
+      lastConnTick = millis();
+      displayDrawScreen(SCREEN_CONNECTING, lumoState, false);
+    }
+  }
 
-  delay(6);
+  delay(12);
 }

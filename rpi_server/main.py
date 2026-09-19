@@ -21,6 +21,8 @@ from services.alarms import AlarmManager
 from services.emotion import EmotionEngine
 from services.tasks import TaskService
 from services.system_stats import SystemStatsService
+from services.animation_engine import AnimationEngine
+from services.ios_companion import IOSCompanionService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("LumoMain")
@@ -32,6 +34,8 @@ alarms = AlarmManager()
 emotion = EmotionEngine()
 tasks = TaskService()
 system_stats = SystemStatsService()
+anim_engine = AnimationEngine()
+ios_companion = IOSCompanionService()
 scheduler = AsyncIOScheduler()
 tz = pytz.timezone("Asia/Kolkata")
 
@@ -125,6 +129,16 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(weather.poll, "interval", minutes=30, args=[hub])
     scheduler.add_job(emotion.push_schedule, "interval", minutes=5, args=[hub])
     scheduler.add_job(system_stats.poll, "interval", seconds=2, args=[hub, get_current_screen])
+
+    async def anim_poll_wrapper():
+        is_music = spotify.is_playing or ios_companion.is_playing
+        await anim_engine.poll_idle(hub, get_current_screen(), is_music)
+
+    async def bt_poll_wrapper():
+        await ios_companion.poll_bluetooth_media(hub, anim_engine)
+
+    scheduler.add_job(anim_poll_wrapper, "interval", seconds=2)
+    scheduler.add_job(bt_poll_wrapper, "interval", seconds=2)
     scheduler.start()
 
     yield
@@ -163,6 +177,18 @@ class TaskCreate(BaseModel):
 class EmotionSet(BaseModel):
     mood: str = "NORMAL"
 
+class AnimPlay(BaseModel):
+    anim: str
+    duration: float = 2.5
+
+class AnimColor(BaseModel):
+    color: str
+
+class NotifPush(BaseModel):
+    app: str = "iPhone"
+    title: str
+    body: str
+
 @app.get("/api/status")
 async def get_status():
     now = datetime.datetime.now(tz)
@@ -177,11 +203,36 @@ async def get_status():
         "schedule": emotion.current_schedule,
         "alarm_ringing": alarms.ringing_id is not None,
         "system": system_stats.get_all(),
+        "eye_color": anim_engine.current_color,
+        "animation": anim_engine.current_anim,
         "spotify": {
             "playing": spotify.is_playing,
             "title": getattr(spotify, "last_track_id", "")
+        },
+        "ios_music": {
+            "connected": ios_companion.is_connected,
+            "playing": ios_companion.is_playing,
+            "title": ios_companion.current_title,
+            "artist": ios_companion.current_artist,
+            "album": ios_companion.current_album
         }
     }
+
+# Animation & Expression Studio APIs
+@app.post("/api/animation/play")
+async def play_animation(item: AnimPlay):
+    await anim_engine.play_animation(item.anim, hub, item.duration)
+    return {"ok": True, "anim": item.anim}
+
+@app.post("/api/animation/color")
+async def set_eye_color(item: AnimColor):
+    ok = await anim_engine.set_eye_color(item.color, hub)
+    return {"ok": ok, "color": item.color}
+
+@app.post("/api/notification")
+async def push_notification_alert(item: NotifPush):
+    await ios_companion.push_notification(item.app, item.title, item.body, hub)
+    return {"ok": True}
 
 # Screen Mode Control
 @app.post("/api/screen")

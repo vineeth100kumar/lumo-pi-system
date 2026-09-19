@@ -5,24 +5,19 @@
 #include "display.h"
 
 #include <WiFi.h>
-#include <ESPmDNS.h>
 #include <ArduinoWebsockets.h>
 #include <ArduinoJson.h>
+#include <ESPmDNS.h>
 
 using namespace websockets;
 
-static WebsocketsClient ws;
+static WebsocketsClient client;
 static LumoState* statePtr = nullptr;
 static bool isConnected = false;
 
 static unsigned long lastReconnectAttempt = 0;
-static unsigned long backoffMs = 2000;
-
-void wsSend(const char* json) {
-  if (isConnected) {
-    ws.send(json);
-  }
-}
+static unsigned long reconnectInterval    = 2000;
+static const unsigned long MAX_BACKOFF    = 30000;
 
 static void handleTextMessage(const String& payload) {
   if (!statePtr) return;
@@ -31,7 +26,7 @@ static void handleTextMessage(const String& payload) {
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload);
   if (err) {
-    Serial.println("[WS] JSON parse failed");
+    Serial.printf("[WS] JSON parse error: %s\n", err.c_str());
     return;
   }
 
@@ -46,6 +41,42 @@ static void handleTextMessage(const String& payload) {
     else if (strcmp(m, "TASKS") == 0)   s.next_screen = SCREEN_TASKS;
     s.flag_screen_switch = true;
     Serial.printf("[WS] Remote screen switch: %s\n", m);
+  }
+  else if (strcmp(cmd, "ANIM") == 0) {
+    const char* animTypeStr = doc["type"] | "normal";
+    int gx = doc["gaze_x"] | 0;
+    int gy = doc["gaze_y"] | 0;
+    unsigned long dur = doc["duration_ms"] | 2500;
+
+    AnimType at = ANIM_NORMAL;
+    if (strcmp(animTypeStr, "wink_left") == 0)   at = ANIM_WINK_L;
+    else if (strcmp(animTypeStr, "wink_right") == 0) at = ANIM_WINK_R;
+    else if (strcmp(animTypeStr, "heart") == 0)      at = ANIM_HEART;
+    else if (strcmp(animTypeStr, "dance") == 0 || strcmp(animTypeStr, "music_dance") == 0) at = ANIM_DANCE;
+    else if (strcmp(animTypeStr, "surprise") == 0)   at = ANIM_SURPRISE;
+    else if (strcmp(animTypeStr, "happy") == 0)      at = ANIM_HAPPY;
+    else if (strcmp(animTypeStr, "sleepy") == 0)     at = ANIM_SLEEPY;
+    else if (strcmp(animTypeStr, "look") == 0)       at = ANIM_LOOK;
+
+    s.anim_type = at;
+    s.flag_anim_changed = true;
+    animatorSetAnim(at, gx, gy, dur);
+  }
+  else if (strcmp(cmd, "EYE_COLOR") == 0) {
+    uint16_t c565 = doc["rgb565"] | 0x077F;
+    s.eye_color = c565;
+    s.flag_anim_changed = true;
+  }
+  else if (strcmp(cmd, "NOTIF") == 0) {
+    const char* app = doc["app"] | "iPhone";
+    const char* title = doc["title"] | "Alert";
+    const char* body = doc["body"] | "";
+    strncpy(s.notif_app, app, sizeof(s.notif_app) - 1);
+    strncpy(s.notif_title, title, sizeof(s.notif_title) - 1);
+    strncpy(s.notif_body, body, sizeof(s.notif_body) - 1);
+    s.notif_active = true;
+    s.notif_start = millis();
+    s.flag_anim_changed = true;
   }
   else if (strcmp(cmd, "SYSTEM_STATS") == 0) {
     s.cpu_temp = doc["cpu_temp"] | s.cpu_temp;
@@ -83,38 +114,37 @@ static void handleTextMessage(const String& payload) {
     s.flag_spotify_changed = true;
   }
   else if (strcmp(cmd, "EMOTION") == 0) {
-    const char* moodStr  = doc["mood"] | "NORMAL";
-    const char* schedStr = doc["schedule"] | "AWAKE";
+    const char* mStr = doc["mood"]     | "NORMAL";
+    const char* sStr = doc["schedule"] | "AWAKE";
 
-    LumoMood m = MOOD_NORMAL;
-    if (strcmp(moodStr, "HAPPY") == 0)        m = MOOD_HAPPY;
-    else if (strcmp(moodStr, "BORED") == 0)   m = MOOD_BORED;
-    else if (strcmp(moodStr, "SAD") == 0)     m = MOOD_SAD;
-    else if (strcmp(moodStr, "EXCITED") == 0) m = MOOD_EXCITED;
+    LumoMood mood = MOOD_NORMAL;
+    if (strcmp(mStr, "HAPPY")   == 0) mood = MOOD_HAPPY;
+    else if (strcmp(mStr, "BORED")   == 0) mood = MOOD_BORED;
+    else if (strcmp(mStr, "SAD")     == 0) mood = MOOD_SAD;
+    else if (strcmp(mStr, "EXCITED") == 0) mood = MOOD_EXCITED;
 
-    CharSchedule sc = SCHED_AWAKE;
-    if (strcmp(schedStr, "DROWSY") == 0)      sc = SCHED_DROWSY;
-    else if (strcmp(schedStr, "SLEEP") == 0)  sc = SCHED_SLEEP;
+    CharSchedule sched = SCHED_AWAKE;
+    if (strcmp(sStr, "DROWSY") == 0) sched = SCHED_DROWSY;
+    else if (strcmp(sStr, "SLEEP")  == 0) sched = SCHED_SLEEP;
 
-    s.mood     = m;
-    s.schedule = sc;
-    animatorSetMood(m, sc);
-
-    if (m == MOOD_EXCITED) {
-      applyNeoPixels(NEO_COLOR, 80, 45);
-    }
+    s.mood     = mood;
+    s.schedule = sched;
+    animatorSetMood(mood, sched);
   }
   else if (strcmp(cmd, "LIGHTS") == 0) {
-    const char* mStr = doc["mode"] | "WARM";
+    const char* modeStr = doc["mode"] | "WARM";
+    uint8_t bri         = doc["brightness"] | 40;
+    uint16_t hue        = doc["hue"] | 0;
+
     NeoMode nm = NEO_WARM;
-    if (strcmp(mStr, "COLOR") == 0)        nm = NEO_COLOR;
-    else if (strcmp(mStr, "BREATHE") == 0) nm = NEO_BREATHE;
-    else if (strcmp(mStr, "OFF") == 0)     nm = NEO_OFF;
+    if (strcmp(modeStr, "COLOR")   == 0) nm = NEO_COLOR;
+    else if (strcmp(modeStr, "BREATHE") == 0) nm = NEO_BREATHE;
+    else if (strcmp(modeStr, "OFF")     == 0) nm = NEO_OFF;
 
     s.neo_mode       = nm;
-    s.neo_brightness = doc["brightness"] | s.neo_brightness;
-    s.neo_hue        = doc["hue"]        | s.neo_hue;
-    applyNeoPixels(s.neo_mode, s.neo_brightness, s.neo_hue);
+    s.neo_brightness = bri;
+    s.neo_hue        = hue;
+    applyNeoPixels(nm, bri, hue);
   }
   else if (strcmp(cmd, "HAPTIC") == 0) {
     uint16_t ms = doc["ms"] | 50;
@@ -122,21 +152,18 @@ static void handleTextMessage(const String& payload) {
   }
   else if (strcmp(cmd, "ALARM_RING") == 0) {
     s.alarm_ringing = true;
-    s.next_screen   = SCREEN_ALARM;
-    s.flag_screen_switch = true;
   }
   else if (strcmp(cmd, "ALARM_OFF") == 0) {
     s.alarm_ringing = false;
-    s.next_screen   = SCREEN_FACE;
-    s.flag_screen_switch = true;
     neoClear();
   }
   else if (strcmp(cmd, "SHOW_TASKS") == 0) {
-    JsonArray arr = doc["items"].as<JsonArray>();
+    JsonArray arr = doc["items"];
     s.task_count = 0;
-    for (JsonVariant v : arr) {
+    for (const char* item : arr) {
       if (s.task_count < 5) {
-        strncpy(s.tasks[s.task_count], v.as<const char*>(), sizeof(s.tasks[0]) - 1);
+        strncpy(s.tasks[s.task_count], item, 47);
+        s.tasks[s.task_count][47] = '\0';
         s.task_count++;
       }
     }
@@ -144,64 +171,79 @@ static void handleTextMessage(const String& payload) {
   }
 }
 
+static void handleBinaryMessage(const uint8_t* data, size_t len) {
+  onNewArt(data, len);
+}
+
 void wsInit(LumoState& state) {
   statePtr = &state;
 
-  ws.onMessage([](WebsocketsMessage msg) {
-    if (msg.isBinary()) {
-      onNewArt((const uint8_t*)msg.c_str(), msg.length());
-    } else if (msg.isText()) {
+  client.onMessage([](WebsocketsMessage msg) {
+    if (msg.isText()) {
       handleTextMessage(msg.data());
+    } else if (msg.isBinary()) {
+      handleBinaryMessage((const uint8_t*)msg.c_str(), msg.length());
     }
   });
 
-  ws.onEvent([](WebsocketsEvent event, String data) {
+  client.onEvent([](WebsocketsEvent event, String data) {
     if (event == WebsocketsEvent::ConnectionOpened) {
-      Serial.println("[WS] Connected to Pi 5!");
+      Serial.println("[WS] Connected to Pi server!");
       isConnected = true;
-      backoffMs = 2000;
-      wsSend("{\"evt\":\"READY\",\"fw\":\"" FW_VERSION "\"}");
+      reconnectInterval = 2000;
+      char readyMsg[64];
+      snprintf(readyMsg, sizeof(readyMsg), "{\"evt\":\"READY\",\"fw\":\"%s\"}", FW_VERSION);
+      client.send(readyMsg);
     } else if (event == WebsocketsEvent::ConnectionClosed) {
-      Serial.println("[WS] Disconnected from Pi 5");
+      Serial.println("[WS] Disconnected from Pi server");
       isConnected = false;
     }
   });
 }
 
 void wsConnect() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WS] WiFi not connected, skipping wsConnect");
+    return;
+  }
 
+  Serial.println("[WS] Resolving Pi Server...");
   IPAddress piIP;
-  if (piIP.fromString(PI_HOSTNAME)) {
-    Serial.printf("[WS] Direct IP configured: %s\n", piIP.toString().c_str());
-  } else {
-    Serial.println("[WS] Resolving Pi via mDNS (" PI_HOSTNAME ")...");
-    piIP = MDNS.queryHost(PI_HOSTNAME);
-    if (piIP != INADDR_NONE && piIP != IPAddress(0,0,0,0)) {
-      Serial.printf("[WS] Found Pi at %s\n", piIP.toString().c_str());
+  if (!piIP.fromString(PI_HOSTNAME)) {
+    int n = MDNS.queryHost(PI_HOSTNAME, 3000);
+    if (n > 0) {
+      piIP = MDNS.IP(0);
+      Serial.printf("[WS] mDNS resolved: %s -> %s\n", PI_HOSTNAME, piIP.toString().c_str());
     } else {
-      Serial.println("[WS] mDNS query failed. Trying direct host...");
-      WiFi.hostByName(PI_HOSTNAME, piIP);
+      Serial.println("[WS] mDNS query failed. Retrying...");
+      return;
     }
   }
 
-  String targetHost = (piIP != INADDR_NONE && piIP != IPAddress(0,0,0,0)) ? piIP.toString() : String(PI_HOSTNAME);
-  String url = "ws://" + targetHost + ":" + String(PI_WS_PORT) + PI_WS_PATH;
-  Serial.printf("[WS] Connecting to %s\n", url.c_str());
-  ws.connect(url);
+  Serial.printf("[WS] Connecting to ws://%s:%d%s\n", piIP.toString().c_str(), PI_WS_PORT, PI_WS_PATH);
+  client.connect(piIP, PI_WS_PORT, PI_WS_PATH);
 }
 
 void wsPoll() {
-  ws.poll();
+  client.poll();
 
-  if (!isConnected && millis() - lastReconnectAttempt > backoffMs) {
-    lastReconnectAttempt = millis();
-    Serial.printf("[WS] Reconnecting (backoff: %lu ms)...\n", backoffMs);
-    wsConnect();
-    backoffMs = min(backoffMs * 2, (unsigned long)30000);
+  if (!isConnected && WiFi.status() == WL_CONNECTED) {
+    unsigned long now = millis();
+    if (now - lastReconnectAttempt >= reconnectInterval) {
+      lastReconnectAttempt = now;
+      Serial.printf("[WS] Reconnecting (backoff: %lu ms)...\n", reconnectInterval);
+      wsConnect();
+      reconnectInterval = min(reconnectInterval * 2, MAX_BACKOFF);
+    }
   }
 }
 
 bool wsConnected() {
   return isConnected;
+}
+
+void wsSend(const char* json) {
+  if (isConnected) {
+    client.send(json);
+  }
 }
