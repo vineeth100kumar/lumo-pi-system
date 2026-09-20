@@ -14,8 +14,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import websockets
 from zeroconf.asyncio import AsyncZeroconf, AsyncServiceInfo
 
-from config import WS_PORT, HTTP_PORT, MDNS_NAME
+from config import WS_PORT, HTTP_PORT, MDNS_NAME, SAGE_REFRESH_SECONDS
 from ws_hub import WSHub
+from services.sage_client import SageClient
 from services.spotify import SpotifyService
 from services.weather import WeatherService
 from services.alarms import AlarmManager
@@ -31,11 +32,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("LumoMain")
 
 hub = WSHub()
+sage = SageClient()
 spotify = SpotifyService()
 weather = WeatherService()
-alarms = AlarmManager()
+alarms = AlarmManager(sage)
 emotion = EmotionEngine()
-tasks = TaskService()
+tasks = TaskService(sage)
 system_stats = SystemStatsService()
 anim_engine = AnimationEngine()
 ios_companion = IOSCompanionService()
@@ -124,11 +126,45 @@ async def on_esp32_ready():
     await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
     await hub.send_json({"cmd": "LIGHTS", "mode": "WARM", "brightness": 40, "hue": 0})
 
+# ===================== SAGE EVENT BRIDGE =====================
+async def refresh_from_sage():
+    """Re-read both lists and show the current tasks on the display."""
+    await tasks.refresh()
+    await alarms.refresh()
+    await tasks.push_to_esp32(hub)
+
+async def on_sage_event(event: dict):
+    """
+    Anything that happens in the task manager, felt at the desk.
+
+    A reminder falling due is either one of Lumo's alarms, in which case the
+    clock has already sounded it and this is the same event arriving a moment
+    later, or it is an ordinary Sage reminder, which becomes a buzz and a card
+    on the face.
+    """
+    kind = event.get("type")
+    data = event.get("data") or {}
+
+    if kind == "REMINDER_TRIGGERED":
+        item_id = data.get("id", "")
+        if any(a.id == item_id for a in alarms.alarms):
+            if alarms.mark_fired(item_id) and alarms.ringing_id is None:
+                alarms.ringing_id = item_id
+                await hub.send_json({"cmd": "ALARM_RING"})
+            return
+        title = data.get("title") or "Reminder"
+        logger.info(f"Sage reminder due: {title}")
+        await ios_companion.push_notification("Sage", title, "Due now", hub)
+        return
+
+    if kind in ("ITEM_CREATED", "ITEM_UPDATED", "ITEM_DELETED", "TASKS_MIGRATED"):
+        await refresh_from_sage()
+
 # ===================== BUTTON DISPATCHER =====================
 async def on_button_event(btn: str):
     logger.info(f"Button pressed on ESP32: {btn}")
     if alarms.ringing_id is not None:
-        alarms.dismiss()
+        await alarms.dismiss()
         await hub.send_json({"cmd": "ALARM_OFF"})
         await emotion.on_alarm_dismissed(hub)
         return
@@ -149,6 +185,18 @@ async def lifespan(app: FastAPI):
     ws_server = await websockets.serve(hub.handle_connection, "0.0.0.0", WS_PORT)
     logger.info(f"ESP32 WebSocket Server listening on ws://0.0.0.0:{WS_PORT}")
 
+    # Tasks and alarms live in Sage. Load them once at boot, then follow its
+    # event stream; the scheduled refresh below is only a safety net for an
+    # event missed while the connection was down.
+    if not sage.is_configured:
+        logger.warning(
+            "No Sage API key found, so tasks and alarms will be empty. "
+            "Add 'EnvironmentFile=-/etc/sage/sage.env' to lumo.service, or set "
+            "SAGE_API_KEY in .env."
+        )
+    await refresh_from_sage()
+    sage_listener = asyncio.create_task(sage.listen(on_sage_event))
+
     zc = await start_mdns()
 
     scheduler.add_job(spotify.poll, "interval", seconds=2, args=[hub, emotion])
@@ -157,6 +205,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(weather.poll, "interval", minutes=30, args=[hub])
     scheduler.add_job(emotion.push_schedule, "interval", minutes=5, args=[hub])
     scheduler.add_job(system_stats.poll, "interval", seconds=2, args=[hub, get_current_screen])
+    scheduler.add_job(refresh_from_sage, "interval", seconds=SAGE_REFRESH_SECONDS)
 
     async def anim_poll_wrapper():
         is_music = spotify.is_playing or ios_companion.is_playing
@@ -190,6 +239,8 @@ async def lifespan(app: FastAPI):
     yield
 
     voice_service.stop()
+    sage_listener.cancel()
+    await sage.close()
     scheduler.shutdown()
     ws_server.close()
     await ws_server.wait_closed()
@@ -271,7 +322,8 @@ async def get_status():
             "has_art": ios_companion.last_img is not None
         },
         "bluetooth": bt_status,
-        "voice": voice_service.get_status()
+        "voice": voice_service.get_status(),
+        "sage": sage.status()
     }
 
 @app.get("/api/music/art")
@@ -386,46 +438,60 @@ async def get_alarms():
 
 @app.post("/api/alarms")
 async def create_alarm(item: AlarmCreate):
-    a = alarms.add_alarm(item.h, item.m, item.label)
+    a = await alarms.add_alarm(item.h, item.m, item.label)
+    if a is None:
+        raise HTTPException(status_code=503, detail=sage.last_error or "Sage unavailable")
     return a.to_dict()
 
 @app.delete("/api/alarms/{alarm_id}")
-async def remove_alarm(alarm_id: int):
-    alarms.delete_alarm(alarm_id)
+async def remove_alarm(alarm_id: str):
+    if not await alarms.delete_alarm(alarm_id):
+        raise HTTPException(status_code=503, detail=sage.last_error or "Sage unavailable")
     return {"ok": True}
 
 @app.post("/api/alarms/{alarm_id}/toggle")
-async def toggle_alarm(alarm_id: int):
-    alarms.toggle_alarm(alarm_id)
+async def toggle_alarm(alarm_id: str):
+    if not await alarms.toggle_alarm(alarm_id):
+        raise HTTPException(status_code=503, detail=sage.last_error or "Sage unavailable")
     return {"ok": True}
 
 @app.post("/api/alarms/snooze")
 async def snooze_alarm():
-    alarms.snooze()
+    await alarms.snooze()
     await hub.send_json({"cmd": "ALARM_OFF"})
     return {"ok": True}
 
 @app.post("/api/alarms/dismiss")
 async def dismiss_alarm():
-    alarms.dismiss()
+    await alarms.dismiss()
     await hub.send_json({"cmd": "ALARM_OFF"})
     await emotion.on_alarm_dismissed(hub)
     return {"ok": True}
 
-# Tasks
+# Tasks (stored in Sage)
 @app.get("/api/tasks")
 async def get_tasks():
-    return tasks.get_tasks()
+    return {"tasks": tasks.get_tasks(), "items": tasks.get_items()}
 
 @app.post("/api/tasks")
 async def add_task(item: TaskCreate):
-    tasks.add_task(item.text)
+    created = await tasks.add_task(item.text)
+    if created is None:
+        raise HTTPException(status_code=503, detail=sage.last_error or "Sage unavailable")
+    await tasks.push_to_esp32(hub)
+    return {"ok": True, "result": created}
+
+@app.post("/api/tasks/{item_id}/complete")
+async def complete_task(item_id: str):
+    if not await tasks.complete_task(item_id):
+        raise HTTPException(status_code=503, detail=sage.last_error or "Sage unavailable")
     await tasks.push_to_esp32(hub)
     return {"ok": True}
 
-@app.delete("/api/tasks/{index}")
-async def remove_task(index: int):
-    tasks.delete_task(index)
+@app.delete("/api/tasks/{item_id}")
+async def remove_task(item_id: str):
+    if not await tasks.delete_task(item_id):
+        raise HTTPException(status_code=503, detail=sage.last_error or "Sage unavailable")
     await tasks.push_to_esp32(hub)
     return {"ok": True}
 

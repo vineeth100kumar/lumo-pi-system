@@ -1280,10 +1280,10 @@
           </div>
           <div style="display:flex; align-items:center; gap:12px;">
             <label class="toggle-switch">
-              <input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="toggleAlarm(${a.id})">
+              <input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="toggleAlarm('${a.id}')">
               <span class="slider-toggle"></span>
             </label>
-            <button onclick="deleteAlarm(${a.id})" style="padding:4px 8px; color:var(--red);">X</button>
+            <button onclick="deleteAlarm('${a.id}')" style="padding:4px 8px; color:var(--red);">X</button>
           </div>
         `;
         list.appendChild(item);
@@ -1296,18 +1296,20 @@
       const res = await fetch("/api/tasks");
       const data = await res.json();
       window.cachedTasks = data.tasks || [];
+      const items = data.items || [];
       const list = document.getElementById("taskList");
       list.innerHTML = "";
 
-      data.tasks.forEach((t, i) => {
+      items.forEach(t => {
         const item = document.createElement("div");
         item.className = "list-item";
+        const due = t.due_date ? ` <span style="opacity:0.55; font-size:0.8rem;">${t.due_date}</span>` : "";
         item.innerHTML = `
           <div style="display:flex; align-items:center; gap:10px;">
-            <input type="checkbox" onclick="deleteTask(${i})" style="width:18px; height:18px; cursor:pointer;">
-            <span>${t}</span>
+            <input type="checkbox" onclick="completeTask('${t.id}')" style="width:18px; height:18px; cursor:pointer;">
+            <span>${t.title}${due}</span>
           </div>
-          <button onclick="deleteTask(${i})" style="padding:4px 8px; font-size:0.8rem;">Del</button>
+          <button onclick="deleteTask('${t.id}')" style="padding:4px 8px; font-size:0.8rem;">Del</button>
         `;
         list.appendChild(item);
       });
@@ -1374,8 +1376,13 @@
     fetchTasks();
   }
 
-  async function deleteTask(index) {
-    await fetch(`/api/tasks/${index}`, { method: "DELETE" });
+  async function completeTask(id) {
+    await postApi(`/api/tasks/${id}/complete`);
+    fetchTasks();
+  }
+
+  async function deleteTask(id) {
+    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
     fetchTasks();
   }
 

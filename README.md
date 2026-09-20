@@ -80,7 +80,60 @@ sudo systemctl start lumo.service
 
 ---
 
-## 4. Spotify Developer App Setup
+## 4. Shared Task Manager (Sage)
+
+Tasks, reminders and alarms are not stored on Lumo. They live in Sage, the task
+manager running on the same Pi, so a task added at the desk clock is on the
+phone and a reminder set on the phone rings at the desk.
+
+Lumo talks to Sage over the loopback address rather than opening its database,
+which means Sage's own rules still apply and its app refreshes the moment
+anything changes. Neither project imports a line of the other's code.
+
+| What happens | Where it goes |
+| :--- | :--- |
+| "Jarvis, add a task" | Sage's capture engine, so times and dates are understood |
+| Task list on the display and dashboard | Sage's open tasks, soonest first |
+| Alarms | Sage reminders tagged `alarm` |
+| A Sage reminder falling due | A buzz and a notification card on the face |
+
+### Setup
+
+The only thing Lumo needs is Sage's API key, and it does not get its own copy.
+Sage keeps the key in `/etc/sage/sage.env`, which is readable only by root, so
+Lumo's service file carries the same `EnvironmentFile` line Sage's does and
+systemd passes the value down:
+
+```ini
+# already present in lumo.service
+EnvironmentFile=-/etc/sage/sage.env
+```
+
+If you installed the service before this change, copy the unit again:
+
+```bash
+sudo cp lumo.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart lumo.service
+```
+
+Then check the connection:
+
+```bash
+cd /home/pi/lumo_pi_system/rpi_server
+venv/bin/python test_sage.py
+```
+
+Running `main.py` by hand instead of through systemd? Put the key in `.env` as
+`SAGE_API_KEY` — it is the same value Sage uses, and the app asks for it on
+each device too.
+
+Sage being down is not fatal: the display keeps showing the last list it saw,
+and Lumo reconnects on its own.
+
+---
+
+## 5. Spotify Developer App Setup
 
 1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create an app.
 2. In your app settings, add `http://localhost:8888/callback` as a **Redirect URI**.
@@ -93,7 +146,7 @@ sudo systemctl start lumo.service
 
 ---
 
-## 5. Screen Navigation (Physical Controls)
+## 6. Screen Navigation (Physical Controls)
 
 - **From Face Screen**:
   - `RIGHT` -> Desk Clock Screen
