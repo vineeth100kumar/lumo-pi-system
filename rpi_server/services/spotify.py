@@ -1,4 +1,4 @@
-﻿import io
+import io
 import time
 import base64
 import logging
@@ -100,12 +100,12 @@ class SpotifyService:
                 img = Image.open(io.BytesIO(resp.content))
                 img = img.resize((100, 100), Image.LANCZOS).convert("RGB")
 
-                # Convert to raw 16-bit RGB565 (big-endian)
+                # Convert to raw 16-bit RGB565 (little-endian for ESP32 drawRGBBitmap)
                 buf = bytearray(100 * 100 * 2)
                 for i, (r, g, b) in enumerate(img.getdata()):
                     rgb565 = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
-                    buf[i * 2]     = (rgb565 >> 8) & 0xFF
-                    buf[i * 2 + 1] = rgb565 & 0xFF
+                    buf[i * 2]     = rgb565 & 0xFF
+                    buf[i * 2 + 1] = (rgb565 >> 8) & 0xFF
 
                 # Prepend magic header: 0xAA 0xBB width height
                 header = bytes([0xAA, 0xBB, 100, 100])

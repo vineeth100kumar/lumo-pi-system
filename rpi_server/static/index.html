@@ -296,6 +296,11 @@
       <button onclick="postApi('/api/spotify/toggle')" class="primary">Play / Pause</button>
       <button onclick="postApi('/api/spotify/next')">Next</button>
     </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button onclick="postApi('/api/music/resend-art')" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);" title="Re-fetches and streams artwork">🔄 Refresh Art</button>
+      <button onclick="postApi('/api/music/toggle-swap')" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);" title="Toggles High/Low byte endianness">🎨 Swap Bytes</button>
+      <button onclick="postApi('/api/music/toggle-bgr')" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);" title="Toggles Red and Blue channels">🔴/🔵 RGB/BGR</button>
+    </div>
   </div>
 
   <!-- 6. Bluetooth Device & Pairing Manager -->

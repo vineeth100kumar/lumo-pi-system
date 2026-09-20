@@ -20,6 +20,9 @@ class IOSCompanionService:
         self.duration_ms = 0
         self.last_art_url = ""
         self._dbus_available = False
+        self.swap_bytes = True  # True = little-endian (required for ESP32 drawRGBBitmap)
+        self.bgr_mode = False   # True if display requires BGR instead of RGB
+        self.last_img = None    # Cache for live color/endianness swapping
         self._init_dbus()
 
     def _init_dbus(self):
@@ -34,57 +37,114 @@ class IOSCompanionService:
             self._dbus_available = False
 
     def _rgb888_to_rgb565(self, r: int, g: int, b: int) -> int:
+        if self.bgr_mode:
+            r, b = b, r
         return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
-    async def fetch_itunes_album_art(self, title: str, artist: str) -> Optional[bytes]:
-        """Fetches official high-res album artwork via iTunes Search API and converts to RGB565."""
+    def encode_image_to_buffer(self, img: Image.Image) -> bytes:
+        """Converts PIL Image to 20004-byte RGB565 binary buffer with header [0xAA, 0xBB, 100, 100]."""
+        from PIL import ImageEnhance
+        img = img.resize((100, 100), Image.Resampling.LANCZOS).convert("RGB")
+        # Enhance colors slightly for vivid rendering on 2.8" SPI TFT
         try:
-            query = f"{title} {artist}"
-            encoded_query = urllib.parse.quote(query)
-            url = f"https://itunes.apple.com/search?term={encoded_query}&entity=song&limit=1"
+            img = ImageEnhance.Color(img).enhance(1.15)
+            img = ImageEnhance.Contrast(img).enhance(1.08)
+        except Exception:
+            pass
 
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                res = await client.get(url)
-                if res.status_code != 200:
-                    return None
+        self.last_img = img
 
-                data = res.json()
-                if not data.get("results"):
-                    return None
+        buf = bytearray(20004)
+        buf[0] = 0xAA
+        buf[1] = 0xBB
+        buf[2] = 100
+        buf[3] = 100
 
-                art_url = data["results"][0].get("artworkUrl100", "")
-                if not art_url:
-                    return None
+        idx = 4
+        for y in range(100):
+            for x in range(100):
+                r, g, b = img.getpixel((x, y))
+                rgb565 = self._rgb888_to_rgb565(r, g, b)
+                if self.swap_bytes:
+                    # Little-endian (low byte first) so ESP32 (uint16_t*) memory access gets exact RGB565
+                    buf[idx]     = rgb565 & 0xFF
+                    buf[idx + 1] = (rgb565 >> 8) & 0xFF
+                else:
+                    # Big-endian
+                    buf[idx]     = (rgb565 >> 8) & 0xFF
+                    buf[idx + 1] = rgb565 & 0xFF
+                idx += 2
 
-                # Upgrade to 600x600 resolution
-                art_url_high = art_url.replace("100x100bb.jpg", "600x600bb.jpg")
-                img_res = await client.get(art_url_high)
-                if img_res.status_code != 200:
-                    img_res = await client.get(art_url)
+        return bytes(buf)
 
-                img = Image.open(BytesIO(img_res.content)).convert("RGB")
-                img = img.resize((100, 100), Image.Resampling.LANCZOS)
+    def _clean_title(self, title: str) -> str:
+        """Strips video suffixes like (Official Video), [4K], etc."""
+        import re
+        t = re.sub(r'[\(\[].*?[\)\]]', '', title)
+        t = re.sub(r'\b(feat|ft)\.?\s+.*$', '', t, flags=re.IGNORECASE)
+        return t.replace("-", " ").strip()
 
-                # Construct 20004 byte binary buffer (0xAA 0xBB width height + RGB565)
-                buf = bytearray(20004)
-                buf[0] = 0xAA
-                buf[1] = 0xBB
-                buf[2] = 100
-                buf[3] = 100
+    def generate_placeholder_art(self, title: str, artist: str) -> bytes:
+        """Generates a high-tech cybernetic placeholder artwork when no cover is available."""
+        from PIL import ImageDraw
+        img = Image.new("RGB", (100, 100), color=(15, 20, 30))
+        draw = ImageDraw.Draw(img)
+        for i in range(0, 100, 20):
+            draw.line([(0, i), (100, i)], fill=(25, 35, 50))
+            draw.line([(i, 0), (i, 100)], fill=(25, 35, 50))
+        draw.rectangle([(2, 2), (97, 97)], outline=(0, 229, 255), width=2)
+        # Note glyph
+        draw.rectangle([(40, 35), (46, 65)], fill=(0, 229, 255))
+        draw.rectangle([(60, 30), (66, 60)], fill=(0, 229, 255))
+        draw.polygon([(40, 35), (66, 30), (66, 38), (40, 43)], fill=(0, 229, 255))
+        draw.ellipse([(32, 58), (46, 68)], fill=(0, 229, 255))
+        draw.ellipse([(52, 53), (66, 63)], fill=(0, 229, 255))
+        return self.encode_image_to_buffer(img)
 
-                idx = 4
-                for y in range(100):
-                    for x in range(100):
-                        r, g, b = img.getpixel((x, y))
-                        rgb565 = self._rgb888_to_rgb565(r, g, b)
-                        buf[idx] = (rgb565 >> 8) & 0xFF
-                        buf[idx + 1] = rgb565 & 0xFF
-                        idx += 2
+    async def fetch_itunes_album_art(self, title: str, artist: str) -> Optional[bytes]:
+        """Fetches official high-res album artwork via iTunes Search API with fallback cleaning."""
+        clean_t = self._clean_title(title)
+        clean_a = self._clean_title(artist)
 
-                return bytes(buf)
-        except Exception as e:
-            logger.warning(f"Error fetching album art from iTunes for {title}: {e}")
-            return None
+        queries = [
+            f"{clean_t} {clean_a}".strip(),
+            f"{title} {artist}".strip(),
+            clean_t,
+            title
+        ]
+
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            for q in queries:
+                if not q:
+                    continue
+                try:
+                    encoded_query = urllib.parse.quote(q)
+                    url = f"https://itunes.apple.com/search?term={encoded_query}&entity=song&limit=1"
+                    res = await client.get(url)
+                    if res.status_code != 200:
+                        continue
+                    data = res.json()
+                    results = data.get("results", [])
+                    if not results:
+                        continue
+
+                    art_url = results[0].get("artworkUrl100", "")
+                    if not art_url:
+                        continue
+
+                    # Upgrade to 600x600 resolution
+                    art_url_high = art_url.replace("100x100bb.jpg", "600x600bb.jpg")
+                    img_res = await client.get(art_url_high)
+                    if img_res.status_code != 200:
+                        img_res = await client.get(art_url)
+
+                    img = Image.open(BytesIO(img_res.content)).convert("RGB")
+                    return self.encode_image_to_buffer(img)
+                except Exception as e:
+                    logger.debug(f"iTunes query '{q}' error: {e}")
+
+        # Fallback to cybernetic placeholder if no results
+        return self.generate_placeholder_art(title, artist)
 
     async def _run_busctl(self, args: list) -> str:
         """Executes a busctl system call."""

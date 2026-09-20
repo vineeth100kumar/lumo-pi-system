@@ -271,6 +271,38 @@ async def ping_bt():
     })
     return {"ok": True}
 
+# Album Art Calibration & Live Correction APIs
+@app.post("/api/music/resend-art")
+async def resend_album_art():
+    if ios_companion.last_img:
+        art_bytes = ios_companion.encode_image_to_buffer(ios_companion.last_img)
+        await hub.send_binary(art_bytes)
+        return {"ok": True, "cached": True}
+    elif ios_companion.current_title:
+        art_bytes = await ios_companion.fetch_itunes_album_art(ios_companion.current_title, ios_companion.current_artist)
+        if art_bytes:
+            await hub.send_binary(art_bytes)
+        return {"ok": True, "fetched": True}
+    return {"ok": False, "error": "No track active"}
+
+@app.post("/api/music/toggle-swap")
+async def toggle_art_swap():
+    ios_companion.swap_bytes = not ios_companion.swap_bytes
+    if ios_companion.last_img:
+        art_bytes = ios_companion.encode_image_to_buffer(ios_companion.last_img)
+        await hub.send_binary(art_bytes)
+    logger.info(f"Toggled album art swap_bytes -> {ios_companion.swap_bytes}")
+    return {"ok": True, "swap_bytes": ios_companion.swap_bytes}
+
+@app.post("/api/music/toggle-bgr")
+async def toggle_art_bgr():
+    ios_companion.bgr_mode = not ios_companion.bgr_mode
+    if ios_companion.last_img:
+        art_bytes = ios_companion.encode_image_to_buffer(ios_companion.last_img)
+        await hub.send_binary(art_bytes)
+    logger.info(f"Toggled album art bgr_mode -> {ios_companion.bgr_mode}")
+    return {"ok": True, "bgr_mode": ios_companion.bgr_mode}
+
 # Animation & Expression Studio APIs
 @app.post("/api/animation/play")
 async def play_animation(item: AnimPlay):
