@@ -41,7 +41,7 @@
 
 // ===================== ENUMS =====================
 enum Button       { BTN_NONE, BTN_OK, BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT };
-enum ScreenMode   { SCREEN_FACE, SCREEN_CLOCK, SCREEN_SYSTEM, SCREEN_SPOTIFY, SCREEN_TASKS, SCREEN_ALARM, SCREEN_CONNECTING };
+enum ScreenMode   { SCREEN_FACE, SCREEN_CLOCK, SCREEN_SYSTEM, SCREEN_SPOTIFY, SCREEN_TASKS, SCREEN_ALARM, SCREEN_CONNECTING, SCREEN_MEMORY };
 enum LumoMood     { MOOD_NORMAL, MOOD_HAPPY, MOOD_BORED, MOOD_SAD, MOOD_EXCITED };
 enum CharSchedule { SCHED_AWAKE, SCHED_DROWSY, SCHED_SLEEP };
 enum NeoMode      { NEO_WARM, NEO_COLOR, NEO_BREATHE, NEO_OFF, NEO_ALARM };
@@ -94,6 +94,9 @@ struct LumoState {
   char          voice_subtitle[48] = "";
   float         voice_volume       = 0.0f;
 
+  // Memories Photo Frame
+  char          mem_caption[24]    = "";
+
   // Dirty flags
   bool       flag_spotify_changed = false;
   bool       flag_tasks_changed   = false;
@@ -101,5 +104,6 @@ struct LumoState {
   bool       flag_anim_changed    = false;
   bool       flag_screen_switch   = false;
   bool       flag_voice_changed   = false;
+  bool       flag_memory_changed  = false;
   ScreenMode next_screen          = SCREEN_FACE;
 };

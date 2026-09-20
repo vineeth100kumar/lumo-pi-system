@@ -39,8 +39,20 @@ static void handleTextMessage(const String& payload) {
     else if (strcmp(m, "SYSTEM") == 0)  s.next_screen = SCREEN_SYSTEM;
     else if (strcmp(m, "SPOTIFY") == 0) s.next_screen = SCREEN_SPOTIFY;
     else if (strcmp(m, "TASKS") == 0)   s.next_screen = SCREEN_TASKS;
+    else if (strcmp(m, "MEMORY") == 0)  s.next_screen = SCREEN_MEMORY;
     s.flag_screen_switch = true;
     Serial.printf("[WS] Remote screen switch: %s\n", m);
+  }
+  else if (strcmp(cmd, "MEMORY_META") == 0) {
+    if (doc["caption"].is<const char*>()) {
+      strncpy(s.mem_caption, doc["caption"], sizeof(s.mem_caption) - 1);
+      s.mem_caption[sizeof(s.mem_caption) - 1] = '\0';
+    } else {
+      s.mem_caption[0] = '\0';
+    }
+    s.next_screen = SCREEN_MEMORY;
+    s.flag_screen_switch = true;
+    s.flag_memory_changed = true;
   }
   else if (strcmp(cmd, "ANIM") == 0) {
     const char* animTypeStr = doc["type"] | "normal";
@@ -198,7 +210,11 @@ static void handleTextMessage(const String& payload) {
 }
 
 static void handleBinaryMessage(const uint8_t* data, size_t len) {
-  onNewArt(data, len);
+  if (len >= 2 && data[0] == 0xAA && data[1] == 0xCC) {
+    onNewMemoryStrip(data, len);
+  } else {
+    onNewArt(data, len);
+  }
 }
 
 void wsInit(LumoState& state) {

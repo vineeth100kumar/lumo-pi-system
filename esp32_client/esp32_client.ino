@@ -149,6 +149,12 @@ void loop() {
       displayDrawScreen(SCREEN_CONNECTING, lumoState, false);
     }
   }
+  else if (currentScreen == SCREEN_MEMORY) {
+    if (lumoState.flag_memory_changed) {
+      lumoState.flag_memory_changed = false;
+      displayDrawScreen(SCREEN_MEMORY, lumoState, false);
+    }
+  }
 
   delay(12);
 }

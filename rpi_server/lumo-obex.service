@@ -1,0 +1,12 @@
+[Unit]
+Description=LUMO Bluetooth OBEX Photo Receiver
+After=bluetooth.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/obexpushd -B -o /home/pi/lumo-pi-system/rpi_server/static/memories/inbox -n
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

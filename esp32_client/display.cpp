@@ -54,6 +54,42 @@ void onNewArt(const uint8_t* data, size_t len) {
   }
 }
 
+static char lastMemoryCaption[28] = "";
+
+void onNewMemoryStrip(const uint8_t* data, size_t len) {
+  if (len < 7) return;
+  if (data[0] != 0xAA || data[1] != 0xCC) return;
+
+  uint16_t y_off = data[2] | ((uint16_t)data[3] << 8);
+  uint8_t  strip_h = data[4];
+  uint16_t strip_w = data[5] | ((uint16_t)data[6] << 8);
+
+  size_t expected_pixels = (size_t)strip_w * strip_h;
+  if (len < 7 + expected_pixels * 2) return;
+
+  // Stream directly into display hardware
+  tft.drawRGBBitmap(0, y_off, (uint16_t*)(data + 7), strip_w, strip_h);
+
+  // If this strip reaches the bottom, re-draw caption overlay if present
+  if (y_off + strip_h >= 240 && lastMemoryCaption[0] != '\0') {
+    tft.fillRect(0, 214, 320, 26, COLOR_BG_STEALTH);
+    tft.drawFastHLine(0, 214, 320, tft.color565(40, 50, 65));
+    tft.setFont(NULL);
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_ACCENT);
+    tft.setCursor(10, 222);
+    tft.print("MEMORY //");
+
+    tft.setTextColor(COLOR_WHITE);
+    tft.setCursor(72, 222);
+    tft.print(lastMemoryCaption);
+
+    tft.setTextColor(COLOR_MUTED);
+    tft.setCursor(240, 222);
+    tft.print("<  OK  >");
+  }
+}
+
 void drawProgressBar(int x, int y, int w, int h, float pct, uint16_t fillColor, uint16_t bgColor) {
   pct = constrain(pct, 0.0f, 1.0f);
   int fillW = (int)(w * pct);
@@ -718,6 +754,38 @@ static void drawConnectingScreen(const LumoState& s) {
   tft.print(ipBuf);
 }
 
+static void drawMemoryScreen(const LumoState& s, bool full) {
+  strncpy(lastMemoryCaption, s.mem_caption, sizeof(lastMemoryCaption) - 1);
+  lastMemoryCaption[sizeof(lastMemoryCaption) - 1] = '\0';
+
+  if (full) {
+    tft.fillScreen(COLOR_BG_BLACK);
+    tft.setFont(NULL);
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_MUTED);
+    tft.setCursor(85, 115);
+    tft.print("Receiving Memory Photo...");
+  }
+
+  if (s.mem_caption[0] != '\0') {
+    tft.fillRect(0, 214, 320, 26, COLOR_BG_STEALTH);
+    tft.drawFastHLine(0, 214, 320, tft.color565(40, 50, 65));
+    tft.setFont(NULL);
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_ACCENT);
+    tft.setCursor(10, 222);
+    tft.print("MEMORY //");
+
+    tft.setTextColor(COLOR_WHITE);
+    tft.setCursor(72, 222);
+    tft.print(s.mem_caption);
+
+    tft.setTextColor(COLOR_MUTED);
+    tft.setCursor(240, 222);
+    tft.print("<  OK  >");
+  }
+}
+
 void displayDrawScreen(ScreenMode mode, const LumoState& s, bool forceFullRedraw) {
   bool modeChanged = (mode != lastModeDrawn) || forceFullRedraw;
   lastModeDrawn = mode;
@@ -744,6 +812,9 @@ void displayDrawScreen(ScreenMode mode, const LumoState& s, bool forceFullRedraw
       break;
     case SCREEN_CONNECTING:
       drawConnectingScreen(s);
+      break;
+    case SCREEN_MEMORY:
+      drawMemoryScreen(s, modeChanged);
       break;
   }
 }

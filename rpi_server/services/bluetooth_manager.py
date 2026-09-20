@@ -135,11 +135,18 @@ class BluetoothManager:
 
         return {"ok": True, "timeout": timeout_sec, "alias": "LUMO Companion"}
 
+    async def _register_opp_service(self):
+        """Advertises OBEX Object Push (OPUSH) so phones offer 'Share via Bluetooth'."""
+        if shutil.which("sdptool"):
+            await self._run_cmd(["sdptool", "add", "OPUSH"])
+            logger.info("Bluetooth OBEX Object Push (OPUSH) SDP record registered.")
+
     async def apply_wearable_config(self) -> Dict[str, Any]:
         """Sets Class of Device to 0x000704 (Wearable Watch) and disables A2DP audio sink."""
         import os
         await self._run_cmd(["hciconfig", "hci0", "class", "0x000704"])
         await self._run_cmd(["bluetoothctl", "system-alias", "LUMO Companion"])
+        await self._register_opp_service()
 
         # Execute setup_wearable_mode.sh if present
         script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setup_wearable_mode.sh")

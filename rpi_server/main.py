@@ -3,12 +3,14 @@ import logging
 import socket
 import datetime
 import pytz
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from io import BytesIO
+from typing import Optional
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import websockets
@@ -27,6 +29,28 @@ from services.animation_engine import AnimationEngine
 from services.ios_companion import IOSCompanionService
 from services.bluetooth_manager import BluetoothManager
 from services.voice import VoiceService, VoiceState
+from services.memories import MemoriesService
+
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+
+    class InboxHandler(FileSystemEventHandler):
+        def __init__(self, loop, memories, hub):
+            self.loop = loop
+            self.memories = memories
+            self.hub = hub
+
+        def on_created(self, event):
+            if event.is_directory:
+                return
+            asyncio.run_coroutine_threadsafe(
+                self.memories.ingest_from_path(event.src_path, self.hub),
+                self.loop
+            )
+except ImportError:
+    Observer = None
+    InboxHandler = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("LumoMain")
@@ -42,9 +66,16 @@ system_stats = SystemStatsService()
 anim_engine = AnimationEngine()
 ios_companion = IOSCompanionService()
 bt_manager = BluetoothManager()
+memories = MemoriesService()
 voice_service = VoiceService(hub=hub, anim_engine=anim_engine)
 scheduler = AsyncIOScheduler()
 tz = pytz.timezone("Asia/Kolkata")
+
+last_interaction = time.time()
+
+def touch_interaction():
+    global last_interaction
+    last_interaction = time.time()
 
 current_screen = "FACE"
 
@@ -53,10 +84,13 @@ def get_current_screen():
 
 async def set_screen_mode(screen: str):
     global current_screen
+    touch_interaction()
     current_screen = screen.upper()
     await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
     if current_screen == "SYSTEM":
         await system_stats.poll(hub, get_current_screen)
+    elif current_screen == "MEMORY":
+        await memories.push_current(hub)
     logger.info(f"Screen switched -> {current_screen}")
 
 # Wire all live services into JARVIS Voice Brain
@@ -70,6 +104,7 @@ voice_service.update_services({
     "anim_engine": anim_engine,
     "ios_companion": ios_companion,
     "bt_manager": bt_manager,
+    "memories": memories,
     "set_screen": set_screen_mode,
     "get_screen": get_current_screen,
 }, hub=hub)
@@ -163,11 +198,23 @@ async def on_sage_event(event: dict):
 # ===================== BUTTON DISPATCHER =====================
 async def on_button_event(btn: str):
     logger.info(f"Button pressed on ESP32: {btn}")
+    touch_interaction()
     if alarms.ringing_id is not None:
         await alarms.dismiss()
         await hub.send_json({"cmd": "ALARM_OFF"})
         await emotion.on_alarm_dismissed(hub)
         return
+
+    if current_screen == "MEMORY":
+        if btn == "LEFT":
+            await memories.prev_photo(hub)
+            return
+        elif btn == "RIGHT":
+            await memories.next_photo(hub)
+            return
+        elif btn == "OK":
+            await set_screen_mode("FACE")
+            return
 
     if btn == "OK":
         await spotify.toggle_play(hub)
@@ -219,10 +266,37 @@ async def lifespan(app: FastAPI):
     async def bt_events_wrapper():
         await bt_manager.poll_connection_events(hub, anim_engine)
 
+    async def memories_ambient_check():
+        if not memories.auto_rotate or not memories.photos:
+            return
+        idle_time = time.time() - last_interaction
+        if idle_time > 120 and current_screen in ("FACE", "CLOCK"):
+            await set_screen_mode("MEMORY")
+
+    async def memories_advance_wrapper():
+        if current_screen == "MEMORY" and memories.auto_rotate:
+            await memories.next_photo(hub)
+
     scheduler.add_job(anim_poll_wrapper, "interval", seconds=2)
     scheduler.add_job(bt_poll_wrapper, "interval", seconds=2)
     scheduler.add_job(bt_events_wrapper, "interval", seconds=2)
+    scheduler.add_job(memories_ambient_check, "interval", seconds=10)
+    scheduler.add_job(memories_advance_wrapper, "interval", seconds=memories.interval_sec)
     scheduler.start()
+
+    # Watchdog file watcher for OBEX inbox
+    observer = None
+    if Observer and InboxHandler:
+        loop = asyncio.get_running_loop()
+        event_handler = InboxHandler(loop, memories, hub)
+        observer = Observer()
+        observer.schedule(event_handler, path=memories.inbox_dir, recursive=False)
+        try:
+            observer.start()
+            logger.info(f"Memories watchdog observer started on {memories.inbox_dir}")
+        except Exception as e:
+            logger.warning(f"Could not start watchdog observer: {e}")
+            observer = None
 
     voice_service.update_services({
         "hub": hub,
@@ -233,12 +307,17 @@ async def lifespan(app: FastAPI):
         "alarms": alarms,
         "tasks": tasks,
         "weather": weather,
+        "memories": memories,
         "set_screen": set_screen_mode,
     }, hub=hub)
     loop = asyncio.get_running_loop()
     voice_service.start(loop=loop)
 
     yield
+
+    if observer:
+        observer.stop()
+        observer.join()
 
     voice_service.stop()
     sage_listener.cancel()
@@ -324,6 +403,13 @@ async def get_status():
             "has_art": ios_companion.last_img is not None
         },
         "bluetooth": bt_status,
+        "memories": {
+            "count": len(memories.photos),
+            "current_index": memories.current_index,
+            "auto_rotate": memories.auto_rotate,
+            "interval_sec": memories.interval_sec,
+            "current": memories.get_current()
+        },
         "voice": voice_service.get_status(),
         "sage": sage.status()
     }
@@ -592,6 +678,84 @@ async def set_voice_device(item: VoiceDeviceSelect):
     loop = asyncio.get_running_loop()
     ok = voice_service.audio_capture.set_device(item.device, loop=loop)
     return {"ok": ok, "device": voice_service.audio_capture.device}
+
+# ===================== MEMORIES PHOTO FRAME =====================
+
+class MemoryConfig(BaseModel):
+    auto_rotate: Optional[bool] = None
+    interval_sec: Optional[int] = None
+    swap_bytes: Optional[bool] = None
+    bgr_mode: Optional[bool] = None
+
+@app.get("/api/memories")
+async def get_memories():
+    return {
+        "photos": memories.list_photos(),
+        "current_index": memories.current_index,
+        "auto_rotate": memories.auto_rotate,
+        "interval_sec": memories.interval_sec,
+        "swap_bytes": memories.swap_bytes,
+        "bgr_mode": memories.bgr_mode,
+    }
+
+@app.post("/api/memories/upload")
+async def upload_memory(file: UploadFile = File(...)):
+    raw = await file.read()
+    item = await memories.ingest_bytes(raw, hub=hub, source="upload", filename=file.filename or "upload.jpg")
+    if not item:
+        raise HTTPException(status_code=400, detail="Invalid image file or processing failed")
+    if current_screen == "MEMORY":
+        await memories.push_current(hub)
+    return {"ok": True, "photo": item}
+
+@app.delete("/api/memories/{photo_id}")
+async def delete_memory(photo_id: str):
+    ok = memories.delete_photo(photo_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if current_screen == "MEMORY" and hub.connected:
+        await memories.push_current(hub)
+    return {"ok": True}
+
+@app.post("/api/memories/next")
+async def next_memory():
+    touch_interaction()
+    photo = await memories.next_photo(hub if current_screen == "MEMORY" else None)
+    return {"ok": True, "photo": photo, "index": memories.current_index}
+
+@app.post("/api/memories/prev")
+async def prev_memory():
+    touch_interaction()
+    photo = await memories.prev_photo(hub if current_screen == "MEMORY" else None)
+    return {"ok": True, "photo": photo, "index": memories.current_index}
+
+@app.post("/api/memories/push")
+async def push_memory_to_display():
+    touch_interaction()
+    if current_screen != "MEMORY":
+        await set_screen_mode("MEMORY")
+    else:
+        await memories.push_current(hub)
+    return {"ok": True}
+
+@app.post("/api/memories/config")
+async def update_memories_config(item: MemoryConfig):
+    if item.auto_rotate is not None:
+        memories.auto_rotate = item.auto_rotate
+    if item.interval_sec is not None:
+        memories.interval_sec = max(5, item.interval_sec)
+    if item.swap_bytes is not None:
+        memories.swap_bytes = item.swap_bytes
+    if item.bgr_mode is not None:
+        memories.bgr_mode = item.bgr_mode
+    memories._save_index()
+    return {
+        "ok": True,
+        "auto_rotate": memories.auto_rotate,
+        "interval_sec": memories.interval_sec,
+        "swap_bytes": memories.swap_bytes,
+        "bgr_mode": memories.bgr_mode,
+    }
 
 if __name__ == "__main__":
     import os
