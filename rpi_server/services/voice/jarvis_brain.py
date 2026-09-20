@@ -97,7 +97,7 @@ JARVIS_TOOLS = [
         "type": "function",
         "function": {
             "name": "set_alarm",
-            "description": "Sets a morning or reminder alarm on LUMO.",
+            "description": "Sets an alarm. It is stored in the shared task manager, so it also appears on the user's phone.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -113,11 +113,11 @@ JARVIS_TOOLS = [
         "type": "function",
         "function": {
             "name": "add_task",
-            "description": "Adds a new to-do task to LUMO's display.",
+            "description": "Adds a task to the user's shared task list, the same one their phone app shows. Pass the request in the user's own words, including any day or time they mentioned, and it will be scheduled.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string", "description": "Task description"}
+                    "text": {"type": "string", "description": "The task in plain words, e.g. 'pick up the parcel tomorrow at 6'"}
                 },
                 "required": ["text"]
             }
@@ -317,7 +317,9 @@ class JarvisBrain:
                 m = int(args.get("m", 30))
                 label = args.get("label", "Alarm")
                 if alarms:
-                    alarms.add_alarm(h, m, label)
+                    created = await alarms.add_alarm(h, m, label)
+                    if created is None:
+                        return "The task manager did not accept the alarm."
                     return f"Alarm set for {h:02d}:{m:02d} ({label})."
                 return "Alarm service unavailable."
 
@@ -325,10 +327,12 @@ class JarvisBrain:
                 tasks = svc.get("tasks")
                 text = args.get("text", "")
                 if tasks and text:
-                    tasks.add_task(text)
+                    created = await tasks.add_task(text)
+                    if created is None:
+                        return "The task manager did not accept the task."
                     if hub:
                         await tasks.push_to_esp32(hub)
-                    return f"Task '{text}' added to display."
+                    return f"Task '{text}' added to your task list."
                 return "Tasks service unavailable."
 
             elif name == "get_weather":

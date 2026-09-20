@@ -1,6 +1,6 @@
 ﻿[Unit]
 Description=LUMO Smart Companion Server (Raspberry Pi 5)
-After=network-online.target
+After=network-online.target sage-backend.service
 Wants=network-online.target
 
 [Service]
@@ -11,6 +11,11 @@ ExecStart=/home/pi/lumo_pi_system/rpi_server/venv/bin/python main.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+# Tasks, reminders and alarms live in Sage, and this is the file that holds the
+# key to it. systemd reads it as root and passes the value down, which is how
+# Lumo gets at a secret it cannot read itself. The leading '-' keeps Lumo
+# starting when the file is not there yet.
+EnvironmentFile=-/etc/sage/sage.env
 
 [Install]
 WantedBy=multi-user.target

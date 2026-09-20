@@ -17,10 +17,28 @@ SPOTIFY_REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN", "")
 WEATHER_LAT = float(os.getenv("WEATHER_LAT", 13.003648))
 WEATHER_LON = float(os.getenv("WEATHER_LON", 77.628993))
 
-# Alarm & Task File Storage
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ALARM_FILE = os.path.join(BASE_DIR, "alarms.json")
-TASK_FILE = os.path.join(BASE_DIR, "tasks.json")
+
+# Sage (the task manager) is the single store for tasks, reminders and alarms.
+# Lumo reads and writes them through Sage's API on the loopback address rather
+# than opening its database, so Sage's own rules still apply and the phone app
+# hears about every change. See services/sage_client.py.
+SAGE_API_URL = os.getenv("SAGE_API_URL", "http://127.0.0.1:8000")
+SAGE_REQUEST_TIMEOUT = float(os.getenv("SAGE_REQUEST_TIMEOUT", "8.0"))
+
+# The key lives in exactly one place, Sage's environment file, which systemd
+# reads for both services. These two are fallbacks for running main.py by hand.
+SAGE_API_KEY = os.getenv("SAGE_API_KEY", "")
+SAGE_ENV_FILE = os.getenv("SAGE_ENV_FILE", "/etc/sage/sage.env")
+SAGE_SECRET_FILE = os.getenv("SAGE_SECRET_FILE", "/home/pi/sage-os/data/api_secret.txt")
+
+# Alarms are Sage reminders carrying this tag. The tag is how Lumo knows to
+# sound the buzzer for one rather than show it as a notification card.
+SAGE_ALARM_TAG = os.getenv("SAGE_ALARM_TAG", "alarm")
+
+# How often to re-read the lists from Sage. Live changes arrive over the
+# websocket within the second; this is the safety net for a missed event.
+SAGE_REFRESH_SECONDS = int(os.getenv("SAGE_REFRESH_SECONDS", "120"))
 
 # Circadian Rhythm Schedule (Hour Thresholds)
 HOUR_SLEEP_START = 0    # Midnight

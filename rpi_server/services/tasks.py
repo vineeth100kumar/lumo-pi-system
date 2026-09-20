@@ -1,55 +1,96 @@
-﻿import os
-import json
+"""
+Lumo's view of the task list, which is Sage's task list.
+
+This used to be a list of plain strings in tasks.json, so a task added at the
+desk clock was invisible on the phone and vice versa. There is one list now and
+Sage keeps it; everything here is a cache of it, refreshed when Sage says
+something changed.
+"""
+
 import logging
-from config import TASK_FILE
+from typing import Optional
+
+from config import SAGE_ALARM_TAG
 
 logger = logging.getLogger("TaskService")
 
+_PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+
+
+def _sort_key(item: dict) -> tuple:
+    """Soonest first, then most urgent. Undated tasks sort after dated ones."""
+    due = item.get("due_date") or item.get("start_at") or ""
+    return (0 if due else 1, due, _PRIORITY_ORDER.get(item.get("priority"), 2))
+
+
 class TaskService:
-    def __init__(self):
-        self.tasks: list[str] = []
-        self._load()
+    def __init__(self, sage):
+        self.sage = sage
+        self.items: list[dict] = []
 
-    def _load(self):
-        if os.path.exists(TASK_FILE):
-            try:
-                with open(TASK_FILE, "r") as f:
-                    data = json.load(f)
-                self.tasks = data.get("tasks", [])
-            except Exception as e:
-                logger.error(f"Error loading tasks.json: {e}")
-                self.tasks = []
-        else:
-            self.tasks = ["Review LUMO Code", "Enjoy Music", "Plan Next Project"]
-            self._save()
+    async def refresh(self) -> list[dict]:
+        """Re-read the open tasks from Sage, keeping the last list on failure."""
+        rows = await self.sage.list_items(entity_type="task", completed_within_days=1)
+        if not rows and not self.sage.online:
+            return self.items
+        open_items = [r for r in rows if not r.get("is_completed")]
+        self.items = sorted(open_items, key=_sort_key)
+        return self.items
 
-    def _save(self):
-        try:
-            with open(TASK_FILE, "w") as f:
-                json.dump({"tasks": self.tasks}, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving tasks.json: {e}")
+    def get_items(self) -> list[dict]:
+        return self.items
 
     def get_tasks(self) -> list[str]:
-        return self.tasks
+        return [item.get("title", "") for item in self.items]
 
-    def add_task(self, text: str):
-        cleaned = text.strip()
-        if cleaned:
-            self.tasks.append(cleaned)
-            self._save()
-            logger.info(f"Added task: {cleaned}")
+    def get_all(self) -> list[str]:
+        """What the voice assistant asks for when it builds its prompt."""
+        return self.get_tasks()
 
-    def delete_task(self, index: int):
-        if 0 <= index < len(self.tasks):
-            removed = self.tasks.pop(index)
-            self._save()
-            logger.info(f"Removed task: {removed}")
+    async def add_task(self, text: str) -> Optional[dict]:
+        """
+        Add a task by writing it the way a person says it.
+
+        Sage's capture engine reads the line, so "pick up the parcel tomorrow
+        at 6" arrives as a task due tomorrow with a reminder set, instead of a
+        string that happens to contain the word tomorrow.
+        """
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return None
+        result = await self.sage.capture(cleaned)
+        if result is None:
+            logger.error(f"Could not add task to Sage: {cleaned}")
+            return None
+        await self.refresh()
+        logger.info(f"Added to Sage: {cleaned}")
+        return result
+
+    async def complete_task(self, item_id: str) -> bool:
+        """Tick a task off. Sage handles recurrence and the phone app's refresh."""
+        updated = await self.sage.update_item(item_id, {"is_completed": True})
+        if updated is None:
+            return False
+        await self.refresh()
+        logger.info(f"Completed task {item_id}")
+        return True
+
+    async def delete_task(self, item_id: str) -> bool:
+        if not await self.sage.delete_item(item_id):
+            return False
+        await self.refresh()
+        logger.info(f"Deleted task {item_id}")
+        return True
 
     async def push_to_esp32(self, hub):
-        if not hub.connected: return
+        if not hub.connected:
+            return
         await hub.send_json({
             "cmd": "SHOW_TASKS",
-            "items": self.tasks[:5]
+            "items": self.get_tasks()[:5]
         })
         logger.info("Pushed top 5 tasks to ESP32")
+
+    def is_alarm(self, item: dict) -> bool:
+        tags = (item.get("context_tags") or "").lower()
+        return SAGE_ALARM_TAG in [t.strip() for t in tags.split(",")]
