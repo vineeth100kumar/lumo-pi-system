@@ -75,11 +75,24 @@ def resolve_api_key() -> str:
     if from_file:
         return from_file
 
-    # Sage generates a random key into this file when none was configured.
-    try:
-        return Path(SAGE_SECRET_FILE).read_text(encoding="utf-8").strip()
-    except Exception:
-        return ""
+    # Sage writes a random key into its data directory when none was
+    # configured, which is the likeliest case on a Pi where API_SECRET was
+    # never set. Where that directory is depends on the user and on what the
+    # checkout was called, so look in the usual places rather than one.
+    home = Path.home()
+    candidates = [Path(SAGE_SECRET_FILE)] + [
+        home / name / "data" / "api_secret.txt"
+        for name in ("sage-os", "TASK_MANAGER", "task_manager", "sage")
+    ]
+    for candidate in candidates:
+        try:
+            key = candidate.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
+        if key:
+            logger.info(f"Using the Sage key from {candidate}")
+            return key
+    return ""
 
 
 class SageClient:

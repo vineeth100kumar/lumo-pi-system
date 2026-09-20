@@ -664,6 +664,8 @@
         updateScreenButtons(data.screen);
       }
 
+      if (data.sage) window.sageStatus = data.sage;
+
       if (typeof updateLcdSimulatorState === 'function') {
         updateLcdSimulatorState(data);
       }
@@ -1263,6 +1265,25 @@
     await postApi("/api/notification", { app, title, body });
   }
 
+  // Tasks and alarms come from Sage now, so an empty list has three possible
+  // meanings and the panel should say which.
+  function sageEmptyReason(noun) {
+    const sage = window.sageStatus;
+    if (!sage) return `No ${noun}`;
+    if (!sage.configured) return "No task manager key. Reinstall lumo.service and restart.";
+    if (!sage.online) return "Task manager unreachable. Is sage-backend running?";
+    if (sage.last_error) return sage.last_error;
+    return `No ${noun}`;
+  }
+
+  function renderEmpty(list, noun) {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.style.opacity = "0.6";
+    row.textContent = sageEmptyReason(noun);
+    list.appendChild(row);
+  }
+
   async function fetchAlarms() {
     try {
       const res = await fetch("/api/alarms");
@@ -1288,6 +1309,7 @@
         `;
         list.appendChild(item);
       });
+      if (!alarms.length) renderEmpty(list, "alarms");
     } catch(e) {}
   }
 
@@ -1313,6 +1335,7 @@
         `;
         list.appendChild(item);
       });
+      if (!items.length) renderEmpty(list, "tasks");
     } catch(e) {}
   }
 
@@ -1727,7 +1750,12 @@
       ctx.strokeStyle = "#282c37";
       ctx.beginPath(); ctx.moveTo(10, 32); ctx.lineTo(310, 32); ctx.stroke();
 
-      const taskList = window.cachedTasks || ["Buy groceries", "Code on LUMO", "Push updates"];
+      const taskList = window.cachedTasks || [];
+      if (!taskList.length) {
+        ctx.fillStyle = "#4a5568";
+        ctx.font = "12px sans-serif";
+        ctx.fillText(sageEmptyReason("tasks").substring(0, 34), 14, 62);
+      }
       taskList.slice(0, 5).forEach((t, i) => {
         const y = 62 + i * 28;
         ctx.fillStyle = "#00E5FF";
@@ -1774,6 +1802,11 @@
   fetchAlarms();
   fetchTasks();
   setInterval(fetchStatus, 2000);
+  // Tasks and alarms used to change only from this page, so reading them once
+  // on load was enough. They come from Sage now and change from the phone, so
+  // the page has to keep asking.
+  setInterval(fetchTasks, 10000);
+  setInterval(fetchAlarms, 15000);
 </script>
 </body>
 </html>
