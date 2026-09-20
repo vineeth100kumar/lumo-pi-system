@@ -15,7 +15,7 @@ waits a moment on the event stream. Nothing else is written.
 import asyncio
 import sys
 
-from services.sage_client import SageClient
+from services.sage_client import SageClient, key_search_report
 from services.tasks import TaskService
 from services.alarms import AlarmManager
 
@@ -25,10 +25,12 @@ async def main() -> int:
     print(f"Sage at {sage.base_url}")
 
     if not sage.is_configured:
-        print("\nNo API key found.")
-        print("  On the Pi, lumo.service needs this line under [Service]:")
-        print("    EnvironmentFile=-/etc/sage/sage.env")
-        print("  Running by hand instead? Put SAGE_API_KEY in .env.")
+        print("\nNo API key found. Looked in:")
+        for place in key_search_report().split("; "):
+            print(f"    {place}")
+        print("\n  Running main.py by hand? Put the key in rpi_server/.env:")
+        print("    SAGE_API_KEY=<the same key the Sage app asks for>")
+        print("  Under systemd, lumo.service reads it from /etc/sage/sage.env.")
         return 1
     print(f"Key found, ending in ...{sage.api_key[-4:]}")
 
