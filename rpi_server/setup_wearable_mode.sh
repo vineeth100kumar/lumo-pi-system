@@ -17,16 +17,19 @@ if [ -f /etc/bluetooth/main.conf ]; then
     echo "Updated /etc/bluetooth/main.conf with Class=0x000704"
 fi
 
-echo "=== [2/3] Disabling A2DP Audio Sink (No Audio Hijacking) ==="
-# Prevent PipeWire / WirePlumber from registering an audio speaker endpoint
+echo "=== [2/3] Enabling Bluetooth Mic & Audio Gateway Profiles ==="
+# Remove old restrictive config that broke Bluetooth headset/mic connections
 WP_DIR="$HOME/.config/wireplumber/wireplumber.conf.d"
+rm -f "$WP_DIR/51-disable-a2dp-sink.conf" 2>/dev/null || true
 mkdir -p "$WP_DIR"
-cat << 'EOF' > "$WP_DIR/51-disable-a2dp-sink.conf"
+cat << 'EOF' > "$WP_DIR/50-bluez-all-roles.conf"
 monitor.bluez.properties = {
-  bluez5.roles = [ "hfp_hf", "hsp_hs" ]
+  bluez5.roles = [ "a2dp_sink", "a2dp_source", "bap_sink", "bap_source", "hfp_hf", "hfp_ag", "hsp_hs", "hsp_ag" ]
+  bluez5.enable-sbc-xq = true
+  bluez5.enable-msbc = true
 }
 EOF
-echo "Created $WP_DIR/51-disable-a2dp-sink.conf"
+echo "Configured Bluetooth audio & mic support in $WP_DIR/50-bluez-all-roles.conf"
 
 # Also handle PulseAudio if installed
 if [ -f /etc/pulse/default.pa ]; then
