@@ -1587,7 +1587,12 @@
     green: "#00FF66",
     white: "#E0F7FA",
     purple: "#9D00FF",
-    red: "#FF1744"
+    red: "#FF1744",
+    happy: "#FFB300",
+    excited: "#00FF66",
+    bored: "#0088A3",
+    sad: "#5C7CFA",
+    sleep: "#334466"
   };
 
   const liveArtImg = new Image();
@@ -1632,41 +1637,112 @@
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  function drawCyberneticEye(ctx, cx, cy, w, h, isLeft, color, gazeX, gazeY, heightScale) {
+  function drawCurvedMouthCanvas(ctx, mcx, mcy, anim, mood, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (anim === "smirk") {
+      // Wry asymmetric smirk curling high on right
+      ctx.beginPath();
+      ctx.moveTo(mcx - 12, mcy + 2);
+      ctx.quadraticCurveTo(mcx - 4, mcy + 2, mcx + 4, mcy);
+      ctx.lineTo(mcx + 14, mcy - 3);
+      ctx.stroke();
+    } else if (anim === "focused") {
+      // Minimalist precision sensor bar
+      ctx.beginPath();
+      ctx.moveTo(mcx - 16, mcy);
+      ctx.lineTo(mcx + 16, mcy);
+      ctx.stroke();
+      ctx.strokeStyle = "#4a5568";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(mcx - 8, mcy + 4);
+      ctx.lineTo(mcx + 8, mcy + 4);
+      ctx.stroke();
+    } else if (anim === "alert") {
+      // Surprised rounded O-mouth sensor
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.roundRect(mcx - 6, mcy - 3, 12, 8, 4);
+      ctx.stroke();
+    } else if (mood === "sad") {
+      // Melancholy downward arc
+      ctx.beginPath();
+      ctx.moveTo(mcx - 14, mcy + 4);
+      ctx.quadraticCurveTo(mcx, mcy - 1, mcx + 14, mcy + 4);
+      ctx.stroke();
+    } else {
+      // Warm friendly curved smile
+      ctx.beginPath();
+      ctx.moveTo(mcx - 14, mcy);
+      ctx.quadraticCurveTo(mcx, mcy + 5, mcx + 14, mcy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCyberneticEye(ctx, cx, cy, w, h, r, isLeft, color, gazeX, gazeY, heightScale, browSlant) {
     ctx.save();
     const currH = Math.max(4, h * heightScale);
     const top = cy - currH / 2 + gazeY;
     const left = cx - w / 2 + gazeX;
-    const r = Math.min(14, currH / 2);
+    const rad = Math.min(r || 8, currH / 2);
 
-    // Visor eye rounded body
+    // Visor eye rounded capsule
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.roundRect(left, top, w, currH, r);
+    ctx.roundRect(left, top, w, currH, rad);
     ctx.fill();
 
-    // Inner angular brow slant cut (\ /)
-    ctx.fillStyle = "#000000";
-    ctx.beginPath();
-    const cutSize = 12 * heightScale;
-    if (isLeft) {
-      // Inner cut on top-right of left eye
-      ctx.moveTo(left + w - cutSize, top);
-      ctx.lineTo(left + w + 1, top);
-      ctx.lineTo(left + w + 1, top + cutSize);
-    } else {
-      // Inner cut on top-left of right eye
-      ctx.moveTo(left - 1, top);
-      ctx.lineTo(left + cutSize, top);
-      ctx.lineTo(left - 1, top + cutSize);
+    // Eyelid-scaled angular brow slant cut
+    const browScale = Math.max(0, Math.min(1, (heightScale - 0.2) / 0.8));
+    if (browScale > 0.05 && browSlant !== 0) {
+      ctx.fillStyle = "#000000";
+      ctx.beginPath();
+      const slantH = Math.min(Math.abs(browSlant), 18) * browScale;
+      const slantW = Math.min(w / 3, 20) * browScale;
+
+      if (browSlant > 0) {
+        // Inward determined brow
+        if (isLeft) {
+          ctx.moveTo(left + w - slantW, top);
+          ctx.lineTo(left + w + 1, top);
+          ctx.lineTo(left + w + 1, top + slantH);
+        } else {
+          ctx.moveTo(left - 1, top);
+          ctx.lineTo(left + slantW, top);
+          ctx.lineTo(left - 1, top + slantH);
+        }
+      } else {
+        // Outward curious brow
+        if (isLeft) {
+          ctx.moveTo(left - 1, top);
+          ctx.lineTo(left + slantW, top);
+          ctx.lineTo(left - 1, top + slantH);
+        } else {
+          ctx.moveTo(left + w - slantW, top);
+          ctx.lineTo(left + w + 1, top);
+          ctx.lineTo(left + w + 1, top + slantH);
+        }
+      }
+      ctx.closePath();
+      ctx.fill();
     }
-    ctx.closePath();
-    ctx.fill();
 
-    // Horizontal laser catchlight slit (14x3px)
-    if (currH > 18) {
+    // High-Tech Cyber Catchlight with 3D Convex Parallax
+    if (heightScale > 0.35 && currH > 14) {
+      const catchX = Math.max(left + 4, Math.min(left + w - 16, cx - Math.round(gazeX * 0.6) + 4));
+      const catchY = Math.max(top + 3, Math.min(top + currH - 6, cy - h / 2 + 6 - Math.round(gazeY * 0.5)));
+      const cW = heightScale < 0.7 ? 8 : 14;
+      const cH = heightScale < 0.7 ? 3 : 4;
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(cx - 7 + gazeX, top + 6, 14, 3);
+      ctx.beginPath();
+      ctx.roundRect(catchX, catchY, cW, cH, 2);
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -1676,25 +1752,41 @@
     const ctx = lcdCtx;
     const now = Date.now();
 
-    // Gaze and blink physics
+    // Gaze and blink physics (Organic alive micro-saccades)
     if (now > nextGazeTime) {
-      targetGazeX = (Math.random() - 0.5) * 8;
-      targetGazeY = (Math.random() - 0.5) * 4;
-      nextGazeTime = now + 2500 + Math.random() * 3000;
+      if (Math.random() < 0.25) {
+        targetGazeX = 0;
+        targetGazeY = 0;
+      } else {
+        targetGazeX = (Math.random() - 0.5) * 8; // ±4px
+        targetGazeY = (Math.random() - 0.5) * 4; // ±2px
+      }
+      nextGazeTime = now + 2400 + Math.random() * 3000;
     }
-    simGazeX += (targetGazeX - simGazeX) * 0.12;
-    simGazeY += (targetGazeY - simGazeY) * 0.12;
+    simGazeX += (targetGazeX - simGazeX) * 0.25;
+    simGazeY += (targetGazeY - simGazeY) * 0.25;
 
-    let heightScale = 1.0;
+    // Organic Asymmetric & Staggered blinks
+    let heightScaleL = 1.0, heightScaleR = 1.0;
     if (now > nextBlinkTime) {
       const blinkElapsed = now - nextBlinkTime;
-      if (blinkElapsed < 85) {
-        heightScale = 1.0 - (blinkElapsed / 85) * 0.92;
-      } else if (blinkElapsed < 170) {
-        heightScale = 0.08 + ((blinkElapsed - 85) / 85) * 0.92;
+      const stagger = 22; // 22ms organic lag between eyes
+      if (blinkElapsed < 95) {
+        heightScaleL = Math.max(0.08, 1.0 - (blinkElapsed / 95) * 0.92);
+      } else if (blinkElapsed < 190) {
+        heightScaleL = Math.min(1.0, 0.08 + ((blinkElapsed - 95) / 95) * 0.92);
       } else {
-        heightScale = 1.0;
+        heightScaleL = 1.0;
         nextBlinkTime = now + 3500 + Math.random() * 4000;
+      }
+
+      const rightElapsed = Math.max(0, blinkElapsed - stagger);
+      if (rightElapsed < 95) {
+        heightScaleR = Math.max(0.08, 1.0 - (rightElapsed / 95) * 0.92);
+      } else if (rightElapsed < 190) {
+        heightScaleR = Math.min(1.0, 0.08 + ((rightElapsed - 95) / 95) * 0.92);
+      } else {
+        heightScaleR = 1.0;
       }
     }
 
@@ -1713,13 +1805,57 @@
       ctx.textAlign = "right";
       ctx.fillText(lcdState.time, 308, 18);
 
-      // Visor Eyes
-      const eyeCol = eyeColorPalette[lcdState.eye_color] || "#00E5FF";
-      drawCyberneticEye(ctx, 96, 94, 56, 48, true, eyeCol, simGazeX, simGazeY, heightScale);
-      drawCyberneticEye(ctx, 224, 94, 56, 48, false, eyeCol, simGazeX, simGazeY, heightScale);
+      const anim = (lcdState.animation || "normal").toLowerCase();
+      const mood = (lcdState.mood || "normal").toLowerCase();
+
+      // Expressive dynamic eye dimensions (Anki Vector / Cozmo style)
+      let eyeWL = 56, eyeWR = 56;
+      let eyeHL = 48, eyeHR = 48;
+      let eyeRad = 8;
+      let browL = 0, browR = 0;
+
+      if (anim === "focused") {
+        eyeWL = 52; eyeWR = 52; eyeHL = 34; eyeHR = 34; eyeRad = 6;
+        browL = 12; browR = 12;
+      } else if (anim === "smirk") {
+        eyeWL = 54; eyeWR = 56; eyeHL = 46; eyeHR = 40; eyeRad = 8;
+        browL = 14; browR = -6;
+      } else if (anim === "curious") {
+        eyeWL = 58; eyeWR = 52; eyeHL = 52; eyeHR = 42; eyeRad = 10;
+        browL = -10; browR = 8;
+      } else if (anim === "alert") {
+        eyeWL = 60; eyeWR = 60; eyeHL = 54; eyeHR = 54; eyeRad = 14;
+        browL = 6; browR = 6;
+      } else if (mood === "happy" || mood === "excited") {
+        eyeWL = 62; eyeWR = 62; eyeHL = 36; eyeHR = 36; eyeRad = 10;
+        browL = 4; browR = 4;
+      } else if (mood === "sad") {
+        eyeWL = 50; eyeWR = 50; eyeHL = 38; eyeHR = 38; eyeRad = 7;
+        browL = -8; browR = -8;
+      }
+
+      // Mood-based eye coloration
+      let eyeCol = eyeColorPalette[lcdState.eye_color];
+      if (!eyeCol) {
+        if (anim === "alert") eyeCol = eyeColorPalette.red;
+        else if (mood === "happy") eyeCol = eyeColorPalette.happy;
+        else if (mood === "excited") eyeCol = eyeColorPalette.green;
+        else if (mood === "sad") eyeCol = eyeColorPalette.sad;
+        else if (mood === "bored") eyeCol = eyeColorPalette.bored;
+        else eyeCol = eyeColorPalette.cyan;
+      }
+
+      // Visor Eyes with dynamic dimensions, parallax catchlight, and brow cuts
+      drawCyberneticEye(ctx, 96, 94, eyeWL, eyeHL, eyeRad, true, eyeCol, simGazeX, simGazeY, heightScaleL, browL);
+      drawCyberneticEye(ctx, 224, 94, eyeWR, eyeHR, eyeRad, false, eyeCol, simGazeX, simGazeY, heightScaleR, browR);
+
+      // Curved Expressive Mouth
+      if (anim !== "dance") {
+        drawCurvedMouthCanvas(ctx, 160 + simGazeX, 134 + simGazeY, anim, mood, eyeCol);
+      }
 
       // Dance Equalizer Bars
-      if (lcdState.animation === "dance") {
+      if (anim === "dance") {
         ctx.fillStyle = eyeCol;
         for (let i = 0; i < 7; i++) {
           const barH = 6 + Math.abs(Math.sin(now * 0.009 + i * 0.8)) * 26;

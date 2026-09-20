@@ -19,6 +19,23 @@ static const uint16_t COLOR_GREEN     = 0x07E6; // Matrix Green
 static const uint16_t COLOR_RED_PULSE = 0xF8A4; // Tactical Red
 static const uint16_t COLOR_RED_DARK  = 0x7800;
 
+// Mood Color Palette (Vector / Cozmo expressive coloration)
+static const uint16_t COLOR_WARM_AMBER = 0xFD20; // Warm Golden Amber (Happy)
+static const uint16_t COLOR_NEON_GREEN = 0x07E0; // Neon Emerald Green (Excited)
+static const uint16_t COLOR_MUTED_TEAL = 0x0473; // Muted Teal (Bored)
+static const uint16_t COLOR_SAD_BLUE   = 0x5B1E; // Melancholy Slate Blue (Sad)
+static const uint16_t COLOR_SLEEP_DIM  = 0x2187; // Low-power dim slate blue (Sleep/Drowsy)
+
+// Dirty-Rect tracking for high-performance zero-flicker eye redraws
+struct DirtyBox {
+  int x, y, w, h;
+  bool valid;
+};
+static DirtyBox prevEyeL = {0,0,0,0,false};
+static DirtyBox prevEyeR = {0,0,0,0,false};
+static DirtyBox prevMouth = {0,0,0,0,false};
+static bool forceFaceClear = true;
+
 static int lastMinuteDrawn = -1;
 static ScreenMode lastModeDrawn = SCREEN_CONNECTING;
 
@@ -107,44 +124,139 @@ void drawTimeBar(const LumoState& s, bool force) {
   tft.print(dateBuf);
 }
 
-// Sleek Cybernetic Eye (56x48px, r=8, determined angular brow)
-static void drawCyberEye(int cx, int cy, int w, int h, int r, float eyelid, uint16_t color, bool isLeft, int browSlant, bool isStandby) {
-  if (isStandby || eyelid <= 0.12f) {
+// Mood Eye Color resolution: automatic expressive colors when manual override is not locked
+static uint16_t getMoodEyeColor(const LumoState& s, AnimType anim) {
+  if (anim == ANIM_ALERT) return COLOR_RED_PULSE;
+  if (s.eye_color != 0 && s.eye_color != COLOR_ACCENT) {
+    return s.eye_color;
+  }
+  if (s.schedule == SCHED_SLEEP || s.schedule == SCHED_DROWSY) {
+    return COLOR_SLEEP_DIM;
+  }
+  switch (s.mood) {
+    case MOOD_HAPPY:   return COLOR_WARM_AMBER;
+    case MOOD_EXCITED: return COLOR_NEON_GREEN;
+    case MOOD_BORED:   return COLOR_MUTED_TEAL;
+    case MOOD_SAD:     return COLOR_SAD_BLUE;
+    default:           return (s.eye_color != 0) ? s.eye_color : COLOR_ACCENT;
+  }
+}
+
+// Sleek Cybernetic Eye with Dynamic Geometry, Eyelid-Scaled Brow Notch, and 3D Parallax Catchlight
+static void drawCyberEye(int cx, int cy, int w, int h, int r, float eyelid, uint16_t color, bool isLeft, int browSlant, bool isStandby, int gx = 0, int gy = 0) {
+  if (isStandby || eyelid <= 0.10f) {
     // Sleek horizontal low-power visor slit (---)
     tft.fillRoundRect(cx - w/2, cy - 3, w, 6, 2, color);
     return;
   }
 
-  // Base Visor Rectangle with beveled/rounded corners
+  // Base Visor Capsule with dynamic rounded corners
   tft.fillRoundRect(cx - w/2, cy - h/2, w, h, r, color);
 
   // Eyelid masking from top (smooth shutter blink)
-  if (eyelid < 0.95f) {
+  if (eyelid < 0.96f) {
     int clipH = (int)(h * (1.0f - eyelid));
-    tft.fillRect(cx - w/2 - 2, cy - h/2 - 2, w + 4, clipH + 2, COLOR_BG_STEALTH);
-  }
-
-  // Angular Brow Slant (Inward = Determined/Cool, Outward = Curious)
-  if (browSlant > 0) {
-    int slantH = min(browSlant, 18);
-    if (isLeft) {
-      // Slant inner top corner (right side of left eye)
-      tft.fillTriangle(cx + w/2 - 20, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
-    } else {
-      // Slant inner top corner (left side of right eye)
-      tft.fillTriangle(cx - w/2 - 2, cy - h/2 - 1, cx - w/2 + 20, cy - h/2 - 1, cx - w/2 - 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
-    }
-  } else if (browSlant < 0) {
-    int slantH = min(-browSlant, 14);
-    if (isLeft) {
-      tft.fillTriangle(cx - w/2 - 2, cy - h/2 - 1, cx - w/2 + 16, cy - h/2 - 1, cx - w/2 - 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
-    } else {
-      tft.fillTriangle(cx + w/2 - 16, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+    if (clipH > 0) {
+      tft.fillRect(cx - w/2 - 2, cy - h/2 - 2, w + 4, clipH + 2, COLOR_BG_STEALTH);
     }
   }
 
-  // High-Tech Cyber Catchlight (horizontal energy slit, 12x4px)
-  tft.fillRoundRect(cx + 4, cy - h/2 + 6, 14, 4, 2, COLOR_WHITE);
+  // Angular Brow Slant with Eyelid-scaled Notch Height
+  // Dynamically shrink slant height and width as eyelid closes so it never jaggedly clips the eyelid mask
+  float browScale = constrain((eyelid - 0.20f) / 0.80f, 0.0f, 1.0f);
+  if (browScale > 0.05f && browSlant != 0) {
+    int maxSlant = (browSlant > 0) ? 18 : 14;
+    int slantH = (int)(min(abs(browSlant), maxSlant) * browScale);
+    int slantW = (int)(min(w / 3, 20) * browScale);
+
+    if (slantH > 0 && slantW > 0) {
+      if (browSlant > 0) {
+        // Inward determined brow
+        if (isLeft) {
+          tft.fillTriangle(cx + w/2 - slantW, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+        } else {
+          tft.fillTriangle(cx - w/2 - 2, cy - h/2 - 1, cx - w/2 + slantW, cy - h/2 - 1, cx - w/2 - 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+        }
+      } else {
+        // Outward curious / quizzical brow
+        if (isLeft) {
+          tft.fillTriangle(cx - w/2 - 2, cy - h/2 - 1, cx - w/2 + slantW, cy - h/2 - 1, cx - w/2 - 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+        } else {
+          tft.fillTriangle(cx + w/2 - slantW, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 - 1, cx + w/2 + 2, cy - h/2 + slantH, COLOR_BG_STEALTH);
+        }
+      }
+    }
+  }
+
+  // High-Tech Cyber Catchlight with 3D Convex Cornea Parallax
+  // Instead of rigidly following the eye center, the reflection stays anchored to the virtual light source
+  if (eyelid > 0.35f && h > 18) {
+    int catchX = cx - (int)(gx * 0.60f) + 4;
+    int catchY = cy - h/2 + 6 - (int)(gy * 0.50f);
+
+    // Keep catchlight safely inside eye boundaries
+    catchX = constrain(catchX, cx - w/2 + 4, cx + w/2 - 16);
+    catchY = constrain(catchY, cy - h/2 + 3, cy + h/2 - 6);
+
+    int cW = (eyelid < 0.70f) ? 8 : 14;
+    int cH = (eyelid < 0.70f) ? 3 : 4;
+    tft.fillRoundRect(catchX, catchY, cW, cH, 2, COLOR_WHITE);
+  }
+}
+
+// Curved Expressive Mouth Renderer (Vector-style organic curves)
+static void drawCurvedMouth(int mcx, int mcy, MouthShape shape, uint16_t color) {
+  switch (shape) {
+    case MOUTH_SMILE: {
+      // 5-point curved warm smile: (-14, 0) -> (-8, 3) -> (0, 4) -> (8, 3) -> (14, 0)
+      for (int t = 0; t <= 1; t++) {
+        tft.drawLine(mcx - 14, mcy + t,     mcx - 8,  mcy + 3 + t, color);
+        tft.drawLine(mcx - 8,  mcy + 3 + t, mcx,      mcy + 4 + t, color);
+        tft.drawLine(mcx,      mcy + 4 + t, mcx + 8,  mcy + 3 + t, color);
+        tft.drawLine(mcx + 8,  mcy + 3 + t, mcx + 14, mcy + t,     color);
+      }
+      break;
+    }
+    case MOUTH_SMIRK: {
+      // Asymmetric wry smirk curling higher on right
+      for (int t = 0; t <= 1; t++) {
+        tft.drawLine(mcx - 12, mcy + 2 + t, mcx - 4,  mcy + 1 + t, color);
+        tft.drawLine(mcx - 4,  mcy + 1 + t, mcx + 4,  mcy - 1 + t, color);
+        tft.drawLine(mcx + 4,  mcy - 1 + t, mcx + 12, mcy - 4 + t, color);
+        tft.drawLine(mcx + 12, mcy - 4 + t, mcx + 15, mcy - 2 + t, color);
+      }
+      break;
+    }
+    case MOUTH_SAD: {
+      // Gentle downward melancholy arc
+      for (int t = 0; t <= 1; t++) {
+        tft.drawLine(mcx - 14, mcy + 3 + t, mcx - 8,  mcy + 1 + t, color);
+        tft.drawLine(mcx - 8,  mcy + 1 + t, mcx,      mcy + t,     color);
+        tft.drawLine(mcx,      mcy + t,     mcx + 8,  mcy + 1 + t, color);
+        tft.drawLine(mcx + 8,  mcy + 1 + t, mcx + 14, mcy + 3 + t, color);
+      }
+      break;
+    }
+    case MOUTH_SURPRISED: {
+      // Rounded oval sensor / O-mouth
+      tft.drawRoundRect(mcx - 6, mcy - 3, 12, 8, 3, color);
+      tft.drawRoundRect(mcx - 5, mcy - 2, 10, 6, 2, color);
+      break;
+    }
+    case MOUTH_FOCUSED: {
+      // Minimalist precision sensor bar
+      tft.drawFastHLine(mcx - 16, mcy, 32, color);
+      tft.drawFastHLine(mcx - 16, mcy + 1, 32, color);
+      tft.drawFastHLine(mcx - 8, mcy + 4, 16, COLOR_MUTED);
+      break;
+    }
+    case MOUTH_NEUTRAL:
+    default: {
+      // Flat subtle sensor dash
+      tft.drawFastHLine(mcx - 12, mcy + 2, 24, color);
+      break;
+    }
+  }
 }
 
 static void drawFaceFull(const LumoState& s) {
@@ -165,9 +277,10 @@ static void drawFaceFull(const LumoState& s) {
   tft.drawFastHLine(16, 30, 288, tft.color565(35, 45, 60));
 
   drawTimeBar(s, true);
+  forceFaceClear = true;
 }
 
-static void drawFaceEyes(const LumoState& s) {
+static void drawFaceEyes(const LumoState& s, bool fullRefresh = false) {
   int gx = animatorGetGazeX();
   int gy = animatorGetGazeY();
 
@@ -182,11 +295,30 @@ static void drawFaceEyes(const LumoState& s) {
   int rx = 220 + gx;
   int cy = 104 + gy;
 
-  // Clear animation area
-  tft.fillRect(30, 34, 260, 166, COLOR_BG_STEALTH);
-
   // Notification Banner
-  if (s.notif_active && (millis() - s.notif_start < 4500)) {
+  bool notifActive = s.notif_active && (millis() - s.notif_start < 4500);
+  if (notifActive) {
+    cy += 16;
+    fullRefresh = true;
+  }
+
+  // High-Performance Dirty-Rect Erase: Only wipe previous bounding boxes
+  if (fullRefresh || forceFaceClear) {
+    tft.fillRect(30, 34, 260, 166, COLOR_BG_STEALTH);
+    forceFaceClear = false;
+  } else {
+    if (prevEyeL.valid) {
+      tft.fillRect(prevEyeL.x - 4, prevEyeL.y - 4, prevEyeL.w + 8, prevEyeL.h + 8, COLOR_BG_STEALTH);
+    }
+    if (prevEyeR.valid) {
+      tft.fillRect(prevEyeR.x - 4, prevEyeR.y - 4, prevEyeR.w + 8, prevEyeR.h + 8, COLOR_BG_STEALTH);
+    }
+    if (prevMouth.valid) {
+      tft.fillRect(prevMouth.x - 4, prevMouth.y - 4, prevMouth.w + 8, prevMouth.h + 8, COLOR_BG_STEALTH);
+    }
+  }
+
+  if (notifActive) {
     tft.fillRoundRect(14, 36, 292, 48, 8, tft.color565(20, 25, 35));
     tft.drawRoundRect(14, 36, 292, 48, 8, COLOR_ACCENT);
 
@@ -202,8 +334,6 @@ static void drawFaceEyes(const LumoState& s) {
     strncpy(cutBody, s.notif_body, sizeof(cutBody) - 1);
     cutBody[23] = '\0';
     tft.print(cutBody);
-
-    cy += 16;
   }
 
   float el = animatorGetEyelidL();
@@ -211,20 +341,29 @@ static void drawFaceEyes(const LumoState& s) {
   int   bl = animatorGetBrowL();
   int   br = animatorGetBrowR();
 
-  uint16_t eyeCol = (s.eye_color != 0) ? s.eye_color : COLOR_ACCENT;
-  if (anim == ANIM_ALERT) eyeCol = COLOR_RED_PULSE;
+  int wl = animatorGetEyeWL();
+  int wr = animatorGetEyeWR();
+  int hl = animatorGetEyeHL();
+  int hr = animatorGetEyeHR();
+  int r  = animatorGetEyeR();
 
-  bool isStandby = (anim == ANIM_STANDBY || s.schedule == SCHED_SLEEP);
+  uint16_t eyeCol = getMoodEyeColor(s, anim);
+  bool isStandby  = (anim == ANIM_STANDBY || s.schedule == SCHED_SLEEP);
 
-  // Draw High-Tech Cyber Visor Eyes (56x48px, r=8)
-  drawCyberEye(lx, cy, 56, 48, 8, el, eyeCol, true,  bl, isStandby);
-  drawCyberEye(rx, cy, 56, 48, 8, er, eyeCol, false, br, isStandby);
+  // Draw High-Tech Cyber Visor Eyes with Dynamic Dimensions & Parallax
+  drawCyberEye(lx, cy, wl, hl, r, el, eyeCol, true,  bl, isStandby, gx, gy);
+  drawCyberEye(rx, cy, wr, hr, r, er, eyeCol, false, br, isStandby, gx, gy);
+
+  // Update previous bounding boxes for dirty rect clearing
+  prevEyeL = { lx - wl/2, cy - hl/2, wl, hl, true };
+  prevEyeR = { rx - wr/2, cy - hr/2, wr, hr, true };
 
   // Cyber Scanner Beam (ANIM_SCAN)
   if (anim == ANIM_SCAN) {
     int scanX = 50 + (int)((sin(millis() / 200.0f) + 1.0f) * 110.0f);
     tft.drawFastVLine(scanX, cy - 24, 48, COLOR_WHITE);
     tft.drawFastVLine(scanX + 1, cy - 24, 48, eyeCol);
+    forceFaceClear = true;
   }
 
   // Audio Equalizer tick marks during beat
@@ -233,25 +372,17 @@ static void drawFaceEyes(const LumoState& s) {
     tft.drawFastHLine(rx - 24, cy + 34, 48, eyeCol);
     int eqH = (int)(abs(sin(millis() / 150.0f)) * 10.0f);
     tft.fillRect(156, cy + 28 - eqH, 8, eqH * 2, eyeCol);
+    forceFaceClear = true;
   }
 
-  // Sleek Tech Mouth / Accents
+  // Curved Expressive Mouth
   if (!isStandby && anim != ANIM_DANCE) {
     int mcx = 160 + gx, mcy = cy + 36;
-    if (anim == ANIM_SMIRK) {
-      // Confident smirk
-      tft.drawLine(mcx - 12, mcy + 2, mcx + 14, mcy - 2, eyeCol);
-      tft.drawLine(mcx - 12, mcy + 3, mcx + 14, mcy - 1, eyeCol);
-    } else if (anim == ANIM_FOCUSED) {
-      // Minimalist sensor line
-      tft.drawFastHLine(mcx - 16, mcy, 32, eyeCol);
-      tft.drawFastHLine(mcx - 8, mcy + 3, 16, COLOR_MUTED);
-    } else if (s.mood == MOOD_SAD) {
-      tft.drawFastHLine(mcx - 12, mcy + 4, 24, eyeCol);
-    } else {
-      // Clean level cyber smile
-      tft.drawFastHLine(mcx - 14, mcy + 2, 28, eyeCol);
-    }
+    MouthShape mShape = animatorGetMouthShape();
+    drawCurvedMouth(mcx, mcy, mShape, eyeCol);
+    prevMouth = { mcx - 18, mcy - 4, 36, 14, true };
+  } else {
+    prevMouth.valid = false;
   }
 }
 
@@ -594,7 +725,7 @@ void displayDrawScreen(ScreenMode mode, const LumoState& s, bool forceFullRedraw
   switch (mode) {
     case SCREEN_FACE:
       if (modeChanged) drawFaceFull(s);
-      drawFaceEyes(s);
+      drawFaceEyes(s, modeChanged);
       break;
     case SCREEN_CLOCK:
       drawClockScreen(s, modeChanged);
