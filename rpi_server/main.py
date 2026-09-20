@@ -5,7 +5,7 @@ import datetime
 import pytz
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from io import BytesIO
@@ -25,6 +25,7 @@ from services.system_stats import SystemStatsService
 from services.animation_engine import AnimationEngine
 from services.ios_companion import IOSCompanionService
 from services.bluetooth_manager import BluetoothManager
+from services.voice import VoiceService, VoiceState
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("LumoMain")
@@ -39,6 +40,7 @@ system_stats = SystemStatsService()
 anim_engine = AnimationEngine()
 ios_companion = IOSCompanionService()
 bt_manager = BluetoothManager()
+voice_service = VoiceService(hub=hub, anim_engine=anim_engine)
 scheduler = AsyncIOScheduler()
 tz = pytz.timezone("Asia/Kolkata")
 
@@ -46,6 +48,14 @@ current_screen = "FACE"
 
 def get_current_screen():
     return current_screen
+
+async def set_screen_mode(screen: str):
+    global current_screen
+    current_screen = screen.upper()
+    await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
+    if current_screen == "SYSTEM":
+        await system_stats.poll(hub, get_current_screen)
+    logger.info(f"Screen switched -> {current_screen}")
 
 # ===================== MDNS =====================
 def get_local_ips():
@@ -148,8 +158,23 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(bt_events_wrapper, "interval", seconds=2)
     scheduler.start()
 
+    voice_service.update_services({
+        "hub": hub,
+        "anim_engine": anim_engine,
+        "ios_companion": ios_companion,
+        "spotify": spotify,
+        "system_stats": system_stats,
+        "alarms": alarms,
+        "tasks": tasks,
+        "weather": weather,
+        "set_screen": set_screen_mode,
+    }, hub=hub)
+    loop = asyncio.get_running_loop()
+    voice_service.start(loop=loop)
+
     yield
 
+    voice_service.stop()
     scheduler.shutdown()
     ws_server.close()
     await ws_server.wait_closed()
@@ -230,7 +255,8 @@ async def get_status():
             "duration_ms": ios_companion.duration_ms,
             "has_art": ios_companion.last_img is not None
         },
-        "bluetooth": bt_status
+        "bluetooth": bt_status,
+        "voice": voice_service.get_status()
     }
 
 @app.get("/api/music/art")
@@ -335,12 +361,7 @@ async def push_notification_alert(item: NotifPush):
 # Screen Mode Control
 @app.post("/api/screen")
 async def set_screen(item: ScreenSet):
-    global current_screen
-    current_screen = item.screen.upper()
-    await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
-    if current_screen == "SYSTEM":
-        await system_stats.poll(hub, get_current_screen)
-    logger.info(f"Screen switched via Web UI -> {current_screen}")
+    await set_screen_mode(item.screen)
     return {"ok": True, "screen": current_screen}
 
 # Alarms
@@ -440,6 +461,36 @@ async def spotify_toggle():
         return {"ok": True, "source": "ios"}
     await spotify.toggle_play(hub)
     return {"ok": True, "source": "spotify"}
+
+# ===================== JARVIS VOICE ASSISTANT =====================
+
+class VoicePrompt(BaseModel):
+    prompt: str
+
+@app.get("/api/voice/status")
+async def get_voice_status():
+    return voice_service.get_status()
+
+@app.post("/api/voice/push-to-talk")
+async def voice_push_to_talk(request: Request):
+    audio_bytes = await request.body()
+    if not audio_bytes or len(audio_bytes) < 100:
+        raise HTTPException(status_code=400, detail="Empty or invalid audio data")
+    res = await voice_service.process_voice_turn(audio_bytes)
+    return res
+
+@app.post("/api/voice/text-command")
+async def voice_text_command(item: VoicePrompt):
+    if not item.prompt or not item.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+    res = await voice_service.process_text_turn(item.prompt.strip())
+    return res
+
+@app.get("/api/voice/last-audio.mp3")
+async def get_last_voice_audio():
+    if voice_service.tts.last_audio_bytes:
+        return Response(content=voice_service.tts.last_audio_bytes, media_type="audio/mpeg")
+    raise HTTPException(status_code=404, detail="No voice audio available")
 
 if __name__ == "__main__":
     import uvicorn

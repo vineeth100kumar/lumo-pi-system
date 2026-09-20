@@ -169,6 +169,32 @@ static void handleTextMessage(const String& payload) {
     }
     s.flag_tasks_changed = true;
   }
+  else if (strcmp(cmd, "VOICE_STATE") == 0) {
+    const char* st = doc["state"] | "IDLE";
+    strncpy(s.voice_state, st, sizeof(s.voice_state) - 1);
+    s.voice_state[sizeof(s.voice_state) - 1] = '\0';
+
+    if (doc["subtitle"].is<const char*>()) {
+      strncpy(s.voice_subtitle, doc["subtitle"], sizeof(s.voice_subtitle) - 1);
+      s.voice_subtitle[sizeof(s.voice_subtitle) - 1] = '\0';
+    } else {
+      s.voice_subtitle[0] = '\0';
+    }
+
+    s.voice_volume = doc["volume"] | 0.0f;
+    s.flag_voice_changed = true;
+
+    if (strcmp(st, "LISTENING") == 0) {
+      animatorSetAnim(ANIM_FOCUSED, 0, 0, 4000);
+    } else if (strcmp(st, "THINKING") == 0) {
+      animatorSetAnim(ANIM_SMIRK, 3, -2, 4000);
+    } else if (strcmp(st, "SPEAKING") == 0) {
+      uint8_t dyn_bri = constrain((uint8_t)(s.voice_volume * 100), 25, 100);
+      applyNeoPixels(NEO_COLOR, dyn_bri, 210);
+    } else if (strcmp(st, "IDLE") == 0) {
+      applyNeoPixels(s.neo_mode, s.neo_brightness, s.neo_hue);
+    }
+  }
 }
 
 static void handleBinaryMessage(const uint8_t* data, size_t len) {

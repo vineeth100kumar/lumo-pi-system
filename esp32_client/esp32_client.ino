@@ -94,12 +94,13 @@ void loop() {
 
   // Screen-specific updates
   if (currentScreen == SCREEN_FACE) {
-    if (animatorNeedsRedraw() || lumoState.flag_anim_changed) {
+    if (animatorNeedsRedraw() || lumoState.flag_anim_changed || lumoState.flag_voice_changed) {
       displayDrawScreen(SCREEN_FACE, lumoState, false);
       animatorClearRedraw();
       lumoState.flag_anim_changed = false;
     }
-    drawTimeBar(lumoState, false);
+    drawTimeBar(lumoState, lumoState.flag_voice_changed);
+    lumoState.flag_voice_changed = false;
   }
   else if (currentScreen == SCREEN_CLOCK) {
     static int lastM = -1;

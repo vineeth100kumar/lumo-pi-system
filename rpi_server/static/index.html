@@ -214,6 +214,43 @@
       background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 60%);
       pointer-events: none;
     }
+    /* JARVIS Voice Console */
+    .ptt-btn.recording {
+      background: linear-gradient(135deg, rgba(255, 69, 58, 0.45), rgba(255, 23, 68, 0.35)) !important;
+      border-color: #ff1744 !important;
+      box-shadow: 0 0 22px rgba(255, 23, 68, 0.5) !important;
+      animation: pttPulse 1.2s infinite alternate;
+    }
+    .ptt-btn.thinking {
+      background: linear-gradient(135deg, rgba(255, 159, 10, 0.35), rgba(255, 179, 0, 0.25)) !important;
+      border-color: #ffb300 !important;
+    }
+    .ptt-btn.speaking {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.35), rgba(10, 132, 255, 0.25)) !important;
+      border-color: #00E5FF !important;
+      box-shadow: 0 0 18px rgba(0, 229, 255, 0.4) !important;
+    }
+    @keyframes pttPulse {
+      0% { transform: scale(1.0); }
+      100% { transform: scale(1.02); }
+    }
+    .voice-chip {
+      padding: 6px 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .voice-chip:hover {
+      color: #fff;
+      border-color: rgba(0,229,255,0.4);
+      background: rgba(0,229,255,0.12);
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 <body>
@@ -255,6 +292,86 @@
       <canvas id="lcdCanvas" width="320" height="240"></canvas>
       <div class="lcd-scanlines"></div>
       <div class="lcd-glare"></div>
+    </div>
+  </div>
+
+  <!-- JARVIS Voice Assistant Companion -->
+  <div class="card" id="jarvisVoiceCard" style="border-color: rgba(0, 229, 255, 0.25); background: linear-gradient(180deg, rgba(20, 26, 40, 0.85) 0%, rgba(13, 16, 26, 0.9) 100%);">
+    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:1.15rem;">🎙️</span>
+        <span style="color:#fff; font-weight:700; letter-spacing:0.3px;">JARVIS Voice Companion</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span class="badge" id="voiceStateBadge" style="background:rgba(255,255,255,0.08); color:var(--muted); font-size:0.75rem; padding:4px 10px;">
+          <span class="dot" id="voiceStateDot" style="width:7px; height:7px; background:#888;"></span>
+          <span id="voiceStateText">IDLE</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Push-To-Talk Center Button -->
+    <div style="display:flex; flex-direction:column; align-items:center; margin: 10px 0 14px 0;">
+      <button id="pttButton" class="ptt-btn" style="
+        width: 100%;
+        padding: 16px 20px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(10, 132, 255, 0.22), rgba(0, 229, 255, 0.12));
+        border: 2px solid rgba(0, 229, 255, 0.35);
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        user-select: none;
+      ">
+        <span id="pttIcon" style="font-size: 1.3rem;">🎙️</span>
+        <span id="pttLabel">Hold Spacebar or Click to Speak</span>
+      </button>
+
+      <!-- Live VU meter bar -->
+      <div id="vuMeterContainer" style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 4px; margin-top: 10px; overflow: hidden; display: none;">
+        <div id="vuMeterBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #30d158, #00E5FF, #ff9f0a); transition: width 0.05s ease;"></div>
+      </div>
+    </div>
+
+    <!-- Live Conversation Transcript -->
+    <div style="background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 12px; margin-bottom: 12px; min-height: 64px; font-size: 0.85rem; line-height: 1.45;">
+      <div id="voiceUserBox" style="color: var(--muted); margin-bottom: 6px; display: none;">
+        <span style="color: var(--accent); font-weight: 600;">You:</span> <span id="voiceUserText">...</span>
+      </div>
+      <div id="voiceJarvisBox" style="color: #fff;">
+        <span style="color: #00E5FF; font-weight: 600;">JARVIS:</span> <span id="voiceJarvisText">"Ready for your command, sir."</span>
+      </div>
+    </div>
+
+    <!-- Text Prompt Fallback Input -->
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <input type="text" id="voiceTextInput" placeholder="Or type a command for Jarvis..." style="
+        flex: 1;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid var(--card-border);
+        border-radius: 10px;
+        padding: 8px 12px;
+        color: #fff;
+        font-size: 0.85rem;
+        outline: none;
+      " onkeydown="if(event.key==='Enter') sendTypedVoicePrompt()">
+      <button onclick="sendTypedVoicePrompt()" style="padding:8px 14px; font-size:0.85rem; background:var(--accent); color:#fff; border-radius:10px;">Send</button>
+    </div>
+
+    <!-- Quick Prompt Chips -->
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+      <button class="voice-chip" onclick="sendVoicePrompt('Change optics to cyan')">Optics Cyan</button>
+      <button class="voice-chip" onclick="sendVoicePrompt('How hot is the processor?')">Pi Vitals</button>
+      <button class="voice-chip" onclick="sendVoicePrompt('Scan the area')">Scan Visor</button>
+      <button class="voice-chip" onclick="sendVoicePrompt('Play music')">Play Music</button>
+      <button class="voice-chip" onclick="sendVoicePrompt('Set alarm for 7:30 AM')">7:30 Alarm</button>
     </div>
   </div>
 
@@ -552,6 +669,11 @@
         document.getElementById("valDisk").textContent = `${data.system.disk_pct} %`;
       }
 
+      // Voice Assistant Status
+      if (data.voice) {
+        updateVoiceUI(data.voice);
+      }
+
       // Bluetooth Pairing & Connection Status
       if (data.bluetooth) {
         updateBluetoothUI(data.bluetooth);
@@ -560,6 +682,242 @@
       const banner = document.getElementById("alarmBanner");
       banner.style.display = data.alarm_ringing ? "block" : "none";
     } catch(e) {}
+  }
+
+  // ===================== JARVIS VOICE COMPANION JS =====================
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isBrowserRecording = false;
+  let audioCtx = null;
+  let analyserNode = null;
+  let animFrameId = null;
+  let isPttActive = false;
+
+  function updateVoiceUI(v) {
+    if (!v) return;
+    const badge = document.getElementById("voiceStateBadge");
+    const dot = document.getElementById("voiceStateDot");
+    const text = document.getElementById("voiceStateText");
+    const pttBtn = document.getElementById("pttButton");
+    const pttLabel = document.getElementById("pttLabel");
+
+    const st = v.state || "IDLE";
+    text.textContent = st;
+
+    if (st === "LISTENING") {
+      dot.style.background = "#30d158";
+      dot.style.boxShadow = "0 0 8px #30d158";
+      badge.style.background = "rgba(48,209,88,0.2)";
+      badge.style.color = "#30d158";
+      if (!isBrowserRecording) {
+        pttBtn.className = "ptt-btn recording";
+        pttLabel.textContent = "Listening to Mic...";
+      }
+    } else if (st === "THINKING") {
+      dot.style.background = "#ff9f0a";
+      dot.style.boxShadow = "0 0 8px #ff9f0a";
+      badge.style.background = "rgba(255,159,10,0.2)";
+      badge.style.color = "#ff9f0a";
+      pttBtn.className = "ptt-btn thinking";
+      pttLabel.textContent = "JARVIS is Thinking...";
+    } else if (st === "SPEAKING") {
+      dot.style.background = "#00E5FF";
+      dot.style.boxShadow = "0 0 10px #00E5FF";
+      badge.style.background = "rgba(0,229,255,0.2)";
+      badge.style.color = "#00E5FF";
+      pttBtn.className = "ptt-btn speaking";
+      pttLabel.textContent = "JARVIS is Speaking...";
+    } else {
+      dot.style.background = "#888";
+      dot.style.boxShadow = "none";
+      badge.style.background = "rgba(255,255,255,0.08)";
+      badge.style.color = "var(--muted)";
+      if (!isBrowserRecording) {
+        pttBtn.className = "ptt-btn";
+        pttLabel.textContent = "Hold Spacebar or Click to Speak";
+      }
+    }
+
+    if (v.last_transcript) {
+      document.getElementById("voiceUserBox").style.display = "block";
+      document.getElementById("voiceUserText").textContent = `"${v.last_transcript}"`;
+    }
+    if (v.last_reply) {
+      document.getElementById("voiceJarvisText").textContent = `"${v.last_reply}"`;
+    }
+  }
+
+  async function startPushToTalk() {
+    if (isPttActive || isBrowserRecording) return;
+    isPttActive = true;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyserNode = audioCtx.createAnalyser();
+      analyserNode.fftSize = 256;
+      source.connect(analyserNode);
+
+      const vuContainer = document.getElementById("vuMeterContainer");
+      const vuBar = document.getElementById("vuMeterBar");
+      if (vuContainer) vuContainer.style.display = "block";
+
+      const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+      function updateVu() {
+        if (!isBrowserRecording) return;
+        analyserNode.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        let avg = sum / dataArray.length;
+        let pct = Math.min(100, Math.round((avg / 128) * 100));
+        if (vuBar) vuBar.style.width = pct + "%";
+        animFrameId = requestAnimationFrame(updateVu);
+      }
+
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        if (vuContainer) vuContainer.style.display = "none";
+        stream.getTracks().forEach(t => t.stop());
+        if (audioCtx && audioCtx.state !== 'closed') {
+          audioCtx.close();
+        }
+
+        const pttBtn = document.getElementById("pttButton");
+        const pttLabel = document.getElementById("pttLabel");
+        pttBtn.className = "ptt-btn thinking";
+        pttLabel.textContent = "Processing speech...";
+
+        const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+        await uploadVoiceAudio(audioBlob);
+      };
+
+      mediaRecorder.start();
+      isBrowserRecording = true;
+
+      const pttBtn = document.getElementById("pttButton");
+      const pttLabel = document.getElementById("pttLabel");
+      pttBtn.className = "ptt-btn recording";
+      pttLabel.textContent = "Listening... Release to Send";
+      updateVu();
+
+    } catch (err) {
+      console.warn("Microphone access error:", err);
+      isPttActive = false;
+      isBrowserRecording = false;
+      alert("Please allow microphone access in your browser to speak with JARVIS.");
+    }
+  }
+
+  function stopPushToTalk() {
+    if (!isPttActive && !isBrowserRecording) return;
+    isPttActive = false;
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+    }
+    isBrowserRecording = false;
+  }
+
+  async function uploadVoiceAudio(blob) {
+    try {
+      const res = await fetch("/api/voice/push-to-talk", {
+        method: "POST",
+        body: blob
+      });
+      const data = await res.json();
+      if (data.transcript) {
+        document.getElementById("voiceUserBox").style.display = "block";
+        document.getElementById("voiceUserText").textContent = `"${data.transcript}"`;
+      }
+      if (data.reply) {
+        document.getElementById("voiceJarvisText").textContent = `"${data.reply}"`;
+        const audio = new Audio("/api/voice/last-audio.mp3?t=" + Date.now());
+        audio.play().catch(e => console.log("Web audio play note:", e));
+      }
+      fetchStatus();
+    } catch (e) {
+      console.error("Failed to send voice payload:", e);
+    } finally {
+      const pttBtn = document.getElementById("pttButton");
+      const pttLabel = document.getElementById("pttLabel");
+      pttBtn.className = "ptt-btn";
+      pttLabel.textContent = "Hold Spacebar or Click to Speak";
+    }
+  }
+
+  async function sendVoicePrompt(text) {
+    if (!text || !text.trim()) return;
+    const pttBtn = document.getElementById("pttButton");
+    const pttLabel = document.getElementById("pttLabel");
+    pttBtn.className = "ptt-btn thinking";
+    pttLabel.textContent = "JARVIS is Thinking...";
+
+    document.getElementById("voiceUserBox").style.display = "block";
+    document.getElementById("voiceUserText").textContent = `"${text}"`;
+
+    try {
+      const res = await fetch("/api/voice/text-command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: text })
+      });
+      const data = await res.json();
+      if (data.reply) {
+        document.getElementById("voiceJarvisText").textContent = `"${data.reply}"`;
+        const audio = new Audio("/api/voice/last-audio.mp3?t=" + Date.now());
+        audio.play().catch(e => console.log("Web audio note:", e));
+      }
+      fetchStatus();
+    } catch (e) {
+      console.error("Text command failed:", e);
+    } finally {
+      pttBtn.className = "ptt-btn";
+      pttLabel.textContent = "Hold Spacebar or Click to Speak";
+    }
+  }
+
+  function sendTypedVoicePrompt() {
+    const inp = document.getElementById("voiceTextInput");
+    const val = inp.value.trim();
+    if (!val) return;
+    inp.value = "";
+    sendVoicePrompt(val);
+  }
+
+  function initVoiceControls() {
+    const pttBtn = document.getElementById("pttButton");
+    if (pttBtn) {
+      pttBtn.addEventListener("mousedown", (e) => { e.preventDefault(); startPushToTalk(); });
+      pttBtn.addEventListener("mouseup", (e) => { e.preventDefault(); stopPushToTalk(); });
+      pttBtn.addEventListener("mouseleave", (e) => { if (isPttActive) stopPushToTalk(); });
+      pttBtn.addEventListener("touchstart", (e) => { e.preventDefault(); startPushToTalk(); }, { passive: false });
+      pttBtn.addEventListener("touchend", (e) => { e.preventDefault(); stopPushToTalk(); }, { passive: false });
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        const tag = document.activeElement ? document.activeElement.tagName : "";
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        if (!isPttActive) startPushToTalk();
+      }
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "Space") {
+        const tag = document.activeElement ? document.activeElement.tagName : "";
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        if (isPttActive) stopPushToTalk();
+      }
+    });
   }
 
   let activeBtMac = "";
@@ -825,7 +1183,8 @@
     alarm_ringing: false,
     system: { cpu_temp: 45, cpu_pct: 12, ram_pct: 35, disk_pct: 22 },
     spotify: { playing: false, title: "", artist: "", progress_ms: 0, duration_ms: 0 },
-    ios_music: { connected: false, playing: false, title: "", artist: "", progress_ms: 0, duration_ms: 0, has_art: false }
+    ios_music: { connected: false, playing: false, title: "", artist: "", progress_ms: 0, duration_ms: 0, has_art: false },
+    voice: { state: "IDLE", subtitle: "", volume: 0.0 }
   };
 
   const eyeColorPalette = {
@@ -858,6 +1217,7 @@
     if (data.system) lcdState.system = data.system;
     if (data.spotify) lcdState.spotify = data.spotify;
     if (data.ios_music) lcdState.ios_music = data.ios_music;
+    if (data.voice) lcdState.voice = data.voice;
 
     const label = document.getElementById("lcdModeLabel");
     if (label) label.textContent = lcdState.screen;
@@ -973,21 +1333,47 @@
         }
       }
 
-      // Bottom Time Bar
+      // Bottom Time Bar / Voice Subtitle
       ctx.fillStyle = "#141824";
       ctx.fillRect(0, 204, 320, 36);
       ctx.strokeStyle = "#1e2330";
       ctx.beginPath(); ctx.moveTo(20, 204); ctx.lineTo(300, 204); ctx.stroke();
 
-      ctx.fillStyle = "#00E5FF";
-      ctx.font = "bold 15px sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(lcdState.time, 24, 228);
+      const v = lcdState.voice;
+      if (v && v.state && v.state !== "IDLE") {
+        if (v.state === "LISTENING") {
+          ctx.fillStyle = "#30d158";
+          ctx.font = "bold 13px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("● JARVIS // LISTENING...", 160, 227);
+        } else if (v.state === "THINKING") {
+          ctx.fillStyle = "#ff9f0a";
+          ctx.font = "bold 13px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("⚙ JARVIS // THINKING...", 160, 227);
+        } else if (v.state === "SPEAKING") {
+          ctx.fillStyle = "#00E5FF";
+          ctx.font = "bold 12px sans-serif";
+          ctx.textAlign = "center";
+          const sub = (v.subtitle || "Speaking...").substring(0, 38);
+          ctx.fillText(`"${sub}"`, 160, 227);
+        } else {
+          ctx.fillStyle = "#ff453a";
+          ctx.font = "bold 13px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("! JARVIS // ERROR", 160, 227);
+        }
+      } else {
+        ctx.fillStyle = "#00E5FF";
+        ctx.font = "bold 15px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(lcdState.time, 24, 228);
 
-      ctx.fillStyle = "#8892b0";
-      ctx.font = "11px sans-serif";
-      ctx.textAlign = "right";
-      ctx.fillText(lcdState.alarm_ringing ? "ALARM RINGING" : "ALARM OFF", 296, 227);
+        ctx.fillStyle = "#8892b0";
+        ctx.font = "11px sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillText(lcdState.alarm_ringing ? "ALARM RINGING" : "ALARM OFF", 296, 227);
+      }
     }
     else if (scr === "CLOCK") {
       ctx.fillStyle = "#00E5FF";
@@ -1161,6 +1547,7 @@
   // Start LCD Animation Loop
   requestAnimationFrame(renderLcdFrame);
 
+  initVoiceControls();
   fetchStatus();
   fetchAlarms();
   fetchTasks();

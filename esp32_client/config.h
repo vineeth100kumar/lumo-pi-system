@@ -88,11 +88,17 @@ struct LumoState {
   char          notif_body[64]  = "";
   unsigned long notif_start     = 0;
 
+  // JARVIS Voice Companion State
+  char          voice_state[16]    = "IDLE";
+  char          voice_subtitle[48] = "";
+  float         voice_volume       = 0.0f;
+
   // Dirty flags
   bool       flag_spotify_changed = false;
   bool       flag_tasks_changed   = false;
   bool       flag_system_changed  = false;
   bool       flag_anim_changed    = false;
   bool       flag_screen_switch   = false;
+  bool       flag_voice_changed   = false;
   ScreenMode next_screen          = SCREEN_FACE;
 };

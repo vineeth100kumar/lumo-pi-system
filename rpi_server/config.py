@@ -26,3 +26,13 @@ TASK_FILE = os.path.join(BASE_DIR, "tasks.json")
 HOUR_SLEEP_START = 0    # Midnight
 HOUR_SLEEP_END   = 8    # 8:00 AM
 HOUR_DROWSY_START = 22  # 10:00 PM
+
+# JARVIS Voice Assistant Settings
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+VOICE_ENABLED = os.getenv("VOICE_ENABLED", "true").lower() == "true"
+VOICE_INPUT_DEVICE = os.getenv("VOICE_INPUT_DEVICE", "default")
+VOICE_OUTPUT_DEVICE = os.getenv("VOICE_OUTPUT_DEVICE", "default")
+VOICE_NAME = os.getenv("VOICE_NAME", "en-GB-RyanNeural")
+VOICE_RMS_THRESHOLD = float(os.getenv("VOICE_RMS_THRESHOLD", "0.018"))
+VOICE_SILENCE_MS = int(os.getenv("VOICE_SILENCE_MS", "650"))
+WAKE_WORD_SENSITIVITY = float(os.getenv("WAKE_WORD_SENSITIVITY", "0.55"))

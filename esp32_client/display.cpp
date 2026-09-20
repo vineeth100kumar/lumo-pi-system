@@ -49,11 +49,45 @@ void drawProgressBar(int x, int y, int w, int h, float pct, uint16_t fillColor, 
 }
 
 void drawTimeBar(const LumoState& s, bool force) {
-  if (!force && s.m == lastMinuteDrawn) return;
-  lastMinuteDrawn = s.m;
+  bool isVoice = (strcmp(s.voice_state, "IDLE") != 0) || (s.voice_subtitle[0] != '\0');
+  if (!force && !isVoice && s.m == lastMinuteDrawn) return;
+  if (!isVoice) lastMinuteDrawn = s.m;
 
   tft.fillRect(0, 204, 320, 36, COLOR_TIME_BAR);
   tft.drawFastHLine(20, 204, 280, tft.color565(30, 35, 45));
+
+  tft.setFont(NULL);
+
+  if (isVoice) {
+    if (strcmp(s.voice_state, "LISTENING") == 0) {
+      tft.setTextSize(2);
+      tft.setTextColor(COLOR_GREEN);
+      tft.setCursor(20, 214);
+      tft.print("// JARVIS: LISTENING...");
+    } else if (strcmp(s.voice_state, "THINKING") == 0) {
+      tft.setTextSize(2);
+      tft.setTextColor(tft.color565(255, 179, 0));
+      tft.setCursor(20, 214);
+      tft.print("// JARVIS: THINKING...");
+    } else if (strcmp(s.voice_state, "SPEAKING") == 0) {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_ACCENT);
+      tft.setCursor(14, 210);
+      tft.print("JARVIS //");
+
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_WHITE);
+      tft.setCursor(76, 210);
+      char cutSub[40];
+      strncpy(cutSub, s.voice_subtitle, sizeof(cutSub) - 1);
+      cutSub[39] = '\0';
+      tft.printf("\"%s\"", cutSub);
+
+      int barW = constrain((int)(s.voice_volume * 280.0f), 10, 280);
+      tft.fillRect(20, 226, barW, 4, COLOR_ACCENT);
+    }
+    return;
+  }
 
   char timeBuf[16];
   uint8_t dispH = s.h % 12;
@@ -63,7 +97,6 @@ void drawTimeBar(const LumoState& s, bool force) {
   char dateBuf[24];
   snprintf(dateBuf, sizeof(dateBuf), "%s %s", s.weekday, s.date);
 
-  tft.setFont(NULL);
   tft.setTextSize(2);
   tft.setTextColor(COLOR_WHITE);
   tft.setCursor(20, 214);
