@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from io import BytesIO
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import websockets
@@ -224,10 +225,22 @@ async def get_status():
             "playing": ios_companion.is_playing,
             "title": ios_companion.current_title,
             "artist": ios_companion.current_artist,
-            "album": ios_companion.current_album
+            "album": ios_companion.current_album,
+            "progress_ms": ios_companion.progress_ms,
+            "duration_ms": ios_companion.duration_ms,
+            "has_art": ios_companion.last_img is not None
         },
         "bluetooth": bt_status
     }
+
+@app.get("/api/music/art")
+async def get_current_art():
+    if ios_companion.last_img:
+        img_io = BytesIO()
+        ios_companion.last_img.save(img_io, format="JPEG", quality=92)
+        img_io.seek(0)
+        return Response(content=img_io.getvalue(), media_type="image/jpeg")
+    raise HTTPException(status_code=404, detail="No artwork available")
 
 # Bluetooth Pairing & Device APIs
 @app.get("/api/bluetooth/status")

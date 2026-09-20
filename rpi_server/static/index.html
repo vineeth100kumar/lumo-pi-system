@@ -169,6 +169,51 @@
       margin-bottom: 14px; text-align: center; animation: pulse 1s infinite alternate;
     }
     @keyframes pulse { from { opacity: 0.85; } to { opacity: 1.0; } }
+
+    /* Live 2.8" LCD Display Mirror */
+    .lcd-wrapper {
+      background: #0d1117;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .lcd-bezel {
+      position: relative;
+      width: 100%;
+      max-width: 440px;
+      margin: 0 auto;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border: 12px solid #1c2128;
+      border-radius: 16px;
+      box-shadow: inset 0 0 16px rgba(0,0,0,0.9), 0 8px 24px rgba(0,0,0,0.7);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #lcdCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      image-rendering: pixelated;
+      background: #000;
+    }
+    .lcd-scanlines {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.22) 50%);
+      background-size: 100% 3px;
+      pointer-events: none;
+      opacity: 0.5;
+    }
+    .lcd-glare {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 60%);
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -189,6 +234,27 @@
     <div style="display:flex; gap:10px; justify-content:center;">
       <button onclick="dismissAlarm()" class="primary" style="background:#fff; color:#000;">Dismiss</button>
       <button onclick="snoozeAlarm()" style="background:rgba(0,0,0,0.3);">Snooze 5m</button>
+    </div>
+  </div>
+
+  <!-- Live 2.8" LCD Screen Mirror (320x240) -->
+  <div class="lcd-wrapper">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:0.85rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#fff;">Live LCD Display Mirror</span>
+        <span class="badge" style="font-size:0.7rem; background:rgba(0,229,255,0.15); color:var(--accent); border-radius:6px; padding:2px 6px;">2.8" 320×240</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:var(--muted);">
+        <span id="lcdSyncDot" style="width:8px; height:8px; border-radius:50%; background:var(--green); display:inline-block; box-shadow:0 0 6px var(--green);"></span>
+        <span id="lcdModeLabel" style="font-weight:700; color:#fff;">FACE</span>
+      </div>
+    </div>
+
+    <!-- Realistic LCD Bezel Enclosure -->
+    <div class="lcd-bezel">
+      <canvas id="lcdCanvas" width="320" height="240"></canvas>
+      <div class="lcd-scanlines"></div>
+      <div class="lcd-glare"></div>
     </div>
   </div>
 
@@ -410,6 +476,11 @@
   async function switchDisplay(mode) {
     activeScreenMode = mode;
     updateScreenButtons(mode);
+    if (typeof lcdState !== 'undefined') {
+      lcdState.screen = mode;
+      const lbl = document.getElementById("lcdModeLabel");
+      if (lbl) lbl.textContent = mode;
+    }
     await postApi("/api/screen", { screen: mode });
   }
 
@@ -431,17 +502,24 @@
 
       const dot = document.getElementById("statusDot");
       const txt = document.getElementById("statusText");
+      const syncDot = document.getElementById("lcdSyncDot");
       if (data.esp32_connected) {
         dot.className = "dot online";
         txt.textContent = "ESP32 Online";
+        if (syncDot) syncDot.style.background = "var(--green)";
       } else {
         dot.className = "dot offline";
         txt.textContent = "ESP32 Offline";
+        if (syncDot) syncDot.style.background = "var(--red)";
       }
 
       if (data.screen && data.screen !== activeScreenMode) {
         activeScreenMode = data.screen;
         updateScreenButtons(data.screen);
+      }
+
+      if (typeof updateLcdSimulatorState === 'function') {
+        updateLcdSimulatorState(data);
       }
 
       if (data.eye_color) {
@@ -644,6 +722,7 @@
     try {
       const res = await fetch("/api/tasks");
       const data = await res.json();
+      window.cachedTasks = data.tasks || [];
       const list = document.getElementById("taskList");
       list.innerHTML = "";
 
@@ -728,6 +807,359 @@
   }
 
   function setEmotion(mood) { postApi("/api/emotion", { mood }); }
+
+  // ==============================================================================
+  // 2.8" ILI9341 LCD Live Screen Simulator (320x240)
+  // ==============================================================================
+  const lcdCanvas = document.getElementById("lcdCanvas");
+  const lcdCtx = lcdCanvas ? lcdCanvas.getContext("2d") : null;
+
+  let lcdState = {
+    screen: "FACE",
+    time: "12:00",
+    date: "Sun 20 Sep",
+    temp_c: 24.5,
+    weather_icon: "cloudy",
+    eye_color: "cyan",
+    animation: "normal",
+    alarm_ringing: false,
+    system: { cpu_temp: 45, cpu_pct: 12, ram_pct: 35, disk_pct: 22 },
+    spotify: { playing: false, title: "", artist: "", progress_ms: 0, duration_ms: 0 },
+    ios_music: { connected: false, playing: false, title: "", artist: "", progress_ms: 0, duration_ms: 0, has_art: false }
+  };
+
+  const eyeColorPalette = {
+    cyan: "#00E5FF",
+    amber: "#FFB300",
+    green: "#00FF66",
+    white: "#E0F7FA",
+    purple: "#9D00FF",
+    red: "#FF1744"
+  };
+
+  const liveArtImg = new Image();
+  let lastLoadedArtTrack = "";
+
+  let simGazeX = 0, targetGazeX = 0;
+  let simGazeY = 0, targetGazeY = 0;
+  let nextBlinkTime = Date.now() + 3000;
+  let nextGazeTime = Date.now() + 2000;
+
+  function updateLcdSimulatorState(data) {
+    if (!data) return;
+    lcdState.screen = (data.screen || "FACE").toUpperCase();
+    lcdState.time = data.time || "12:00";
+    lcdState.date = data.date || "20 Sep";
+    lcdState.temp_c = data.temp_c || 25;
+    lcdState.weather_icon = data.weather_icon || "cloudy";
+    lcdState.eye_color = data.eye_color || "cyan";
+    lcdState.animation = data.animation || "normal";
+    lcdState.alarm_ringing = !!data.alarm_ringing;
+    if (data.system) lcdState.system = data.system;
+    if (data.spotify) lcdState.spotify = data.spotify;
+    if (data.ios_music) lcdState.ios_music = data.ios_music;
+
+    const label = document.getElementById("lcdModeLabel");
+    if (label) label.textContent = lcdState.screen;
+
+    // Load artwork if track changed or has art
+    const music = (lcdState.ios_music && (lcdState.ios_music.playing || lcdState.ios_music.title)) ? lcdState.ios_music : lcdState.spotify;
+    if (music && music.title && music.title !== lastLoadedArtTrack) {
+      lastLoadedArtTrack = music.title;
+      liveArtImg.src = "/api/music/art?t=" + Date.now();
+    }
+  }
+
+  function formatTimeMs(ms) {
+    if (!ms || isNaN(ms)) return "0:00";
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  function drawCyberneticEye(ctx, cx, cy, w, h, isLeft, color, gazeX, gazeY, heightScale) {
+    ctx.save();
+    const currH = Math.max(4, h * heightScale);
+    const top = cy - currH / 2 + gazeY;
+    const left = cx - w / 2 + gazeX;
+    const r = Math.min(14, currH / 2);
+
+    // Visor eye rounded body
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(left, top, w, currH, r);
+    ctx.fill();
+
+    // Inner angular brow slant cut (\ /)
+    ctx.fillStyle = "#000000";
+    ctx.beginPath();
+    const cutSize = 12 * heightScale;
+    if (isLeft) {
+      // Inner cut on top-right of left eye
+      ctx.moveTo(left + w - cutSize, top);
+      ctx.lineTo(left + w + 1, top);
+      ctx.lineTo(left + w + 1, top + cutSize);
+    } else {
+      // Inner cut on top-left of right eye
+      ctx.moveTo(left - 1, top);
+      ctx.lineTo(left + cutSize, top);
+      ctx.lineTo(left - 1, top + cutSize);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Horizontal laser catchlight slit (14x3px)
+    if (currH > 18) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(cx - 7 + gazeX, top + 6, 14, 3);
+    }
+    ctx.restore();
+  }
+
+  function renderLcdFrame() {
+    if (!lcdCtx) return;
+    const ctx = lcdCtx;
+    const now = Date.now();
+
+    // Gaze and blink physics
+    if (now > nextGazeTime) {
+      targetGazeX = (Math.random() - 0.5) * 8;
+      targetGazeY = (Math.random() - 0.5) * 4;
+      nextGazeTime = now + 2500 + Math.random() * 3000;
+    }
+    simGazeX += (targetGazeX - simGazeX) * 0.12;
+    simGazeY += (targetGazeY - simGazeY) * 0.12;
+
+    let heightScale = 1.0;
+    if (now > nextBlinkTime) {
+      const blinkElapsed = now - nextBlinkTime;
+      if (blinkElapsed < 85) {
+        heightScale = 1.0 - (blinkElapsed / 85) * 0.92;
+      } else if (blinkElapsed < 170) {
+        heightScale = 0.08 + ((blinkElapsed - 85) / 85) * 0.92;
+      } else {
+        heightScale = 1.0;
+        nextBlinkTime = now + 3500 + Math.random() * 4000;
+      }
+    }
+
+    // Clear black screen (320x240)
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, 320, 240);
+
+    const scr = lcdState.screen;
+
+    if (scr === "FACE") {
+      // Top Bar
+      ctx.fillStyle = "#8892b0";
+      ctx.font = "12px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("LUMO", 160, 18);
+      ctx.textAlign = "right";
+      ctx.fillText(lcdState.time, 308, 18);
+
+      // Visor Eyes
+      const eyeCol = eyeColorPalette[lcdState.eye_color] || "#00E5FF";
+      drawCyberneticEye(ctx, 96, 94, 56, 48, true, eyeCol, simGazeX, simGazeY, heightScale);
+      drawCyberneticEye(ctx, 224, 94, 56, 48, false, eyeCol, simGazeX, simGazeY, heightScale);
+
+      // Dance Equalizer Bars
+      if (lcdState.animation === "dance") {
+        ctx.fillStyle = eyeCol;
+        for (let i = 0; i < 7; i++) {
+          const barH = 6 + Math.abs(Math.sin(now * 0.009 + i * 0.8)) * 26;
+          ctx.fillRect(100 + i * 18, 175 - barH, 10, barH);
+        }
+      }
+
+      // Bottom Time Bar
+      ctx.fillStyle = "#141824";
+      ctx.fillRect(0, 204, 320, 36);
+      ctx.strokeStyle = "#1e2330";
+      ctx.beginPath(); ctx.moveTo(20, 204); ctx.lineTo(300, 204); ctx.stroke();
+
+      ctx.fillStyle = "#00E5FF";
+      ctx.font = "bold 15px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(lcdState.time, 24, 228);
+
+      ctx.fillStyle = "#8892b0";
+      ctx.font = "11px sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText(lcdState.alarm_ringing ? "ALARM RINGING" : "ALARM OFF", 296, 227);
+    }
+    else if (scr === "CLOCK") {
+      ctx.fillStyle = "#00E5FF";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`🌤️ ${lcdState.temp_c}°C`, 14, 20);
+      ctx.textAlign = "right";
+      ctx.fillText("LUMO", 306, 20);
+      ctx.strokeStyle = "#282c37";
+      ctx.beginPath(); ctx.moveTo(10, 28); ctx.lineTo(310, 28); ctx.stroke();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 52px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(lcdState.time, 160, 105);
+
+      ctx.fillStyle = "#00E5FF";
+      ctx.font = "16px sans-serif";
+      ctx.fillText(lcdState.date, 160, 145);
+
+      ctx.fillStyle = lcdState.alarm_ringing ? "#FF1744" : "#8892b0";
+      ctx.font = "13px sans-serif";
+      ctx.fillText(lcdState.alarm_ringing ? "⏰ ALARM RINGING!" : "⏰ 07:30 ALARM OFF", 160, 180);
+
+      ctx.fillStyle = "#4a5568";
+      ctx.font = "11px monospace";
+      ctx.fillText("Tasks ←    → Music", 160, 222);
+    }
+    else if (scr === "SYSTEM") {
+      ctx.fillStyle = "#00E5FF";
+      ctx.font = "bold 15px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("Pi 5 Hardware Vitals", 14, 24);
+      ctx.strokeStyle = "#282c37";
+      ctx.beginPath(); ctx.moveTo(10, 32); ctx.lineTo(310, 32); ctx.stroke();
+
+      const stats = [
+        { lbl: "CPU Temp", val: `${lcdState.system.cpu_temp || 0} °C`, pct: (lcdState.system.cpu_temp || 0) / 85, col: "#FFB300" },
+        { lbl: "CPU Load", val: `${lcdState.system.cpu_pct || 0} %`, pct: (lcdState.system.cpu_pct || 0) / 100, col: "#00E5FF" },
+        { lbl: "RAM Usage", val: `${lcdState.system.ram_pct || 0} %`, pct: (lcdState.system.ram_pct || 0) / 100, col: "#00FF66" },
+        { lbl: "Disk Storage", val: `${lcdState.system.disk_pct || 0} %`, pct: (lcdState.system.disk_pct || 0) / 100, col: "#8892b0" }
+      ];
+
+      stats.forEach((s, idx) => {
+        const y = 50 + idx * 46;
+        ctx.fillStyle = "#8892b0";
+        ctx.font = "11px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(s.lbl, 14, y);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "right";
+        ctx.fillText(s.val, 306, y);
+
+        ctx.fillStyle = "#1e222d";
+        ctx.fillRect(14, y + 6, 292, 8);
+
+        ctx.fillStyle = s.col;
+        const fillW = Math.max(0, Math.min(292, 292 * s.pct));
+        ctx.fillRect(14, y + 6, fillW, 8);
+      });
+    }
+    else if (scr === "SPOTIFY") {
+      ctx.fillStyle = "#00FF66";
+      ctx.font = "bold 14px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("Now Playing", 14, 22);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "right";
+      ctx.fillText("LUMO", 306, 22);
+      ctx.strokeStyle = "#282c37";
+      ctx.beginPath(); ctx.moveTo(10, 32); ctx.lineTo(310, 32); ctx.stroke();
+
+      const m = (lcdState.ios_music && (lcdState.ios_music.playing || lcdState.ios_music.title)) ? lcdState.ios_music : lcdState.spotify;
+
+      // Album Art (100x100 at 12, 44)
+      ctx.strokeStyle = "#3a3f4d";
+      ctx.strokeRect(10, 42, 104, 104);
+
+      if (liveArtImg.complete && liveArtImg.naturalWidth > 0) {
+        ctx.drawImage(liveArtImg, 12, 44, 100, 100);
+      } else {
+        ctx.fillStyle = "#0d1117";
+        ctx.fillRect(12, 44, 100, 100);
+        ctx.strokeStyle = "#00E5FF";
+        ctx.strokeRect(13, 45, 98, 98);
+        ctx.fillStyle = "#00E5FF";
+        ctx.font = "32px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("♫", 62, 106);
+      }
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 15px sans-serif";
+      ctx.textAlign = "left";
+      const title = (m.title || "No Track").substring(0, 15);
+      ctx.fillText(title, 124, 62);
+
+      ctx.fillStyle = "#8892b0";
+      ctx.font = "12px sans-serif";
+      const artist = (m.artist || "Idle").substring(0, 16);
+      ctx.fillText(artist, 124, 86);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "11px monospace";
+      const progStr = `${formatTimeMs(m.progress_ms)} / ${formatTimeMs(m.duration_ms)}`;
+      ctx.fillText(progStr, 124, 116);
+
+      ctx.fillStyle = m.playing ? "#00FF66" : "#8892b0";
+      ctx.fillText(m.playing ? "[PLAYING]" : "[PAUSED]", 124, 136);
+
+      ctx.fillStyle = "#222633";
+      ctx.fillRect(12, 162, 296, 8);
+      const pct = (m.duration_ms > 0) ? Math.min(1.0, m.progress_ms / m.duration_ms) : 0;
+      ctx.fillStyle = "#00FF66";
+      ctx.fillRect(12, 162, 296 * pct, 8);
+
+      ctx.fillStyle = "#4a5568";
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("Controlled via Local Web Dashboard", 160, 222);
+    }
+    else if (scr === "TASKS") {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 16px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("Tasks", 14, 22);
+      ctx.strokeStyle = "#282c37";
+      ctx.beginPath(); ctx.moveTo(10, 32); ctx.lineTo(310, 32); ctx.stroke();
+
+      const taskList = window.cachedTasks || ["Buy groceries", "Code on LUMO", "Push updates"];
+      taskList.slice(0, 5).forEach((t, i) => {
+        const y = 62 + i * 28;
+        ctx.fillStyle = "#00E5FF";
+        ctx.font = "bold 14px sans-serif";
+        ctx.fillText(">", 14, y);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "13px sans-serif";
+        ctx.fillText(t.substring(0, 22), 32, y);
+      });
+    }
+    else if (scr === "ALARM") {
+      const flash = Math.floor(now / 500) % 2 === 0;
+      ctx.fillStyle = flash ? "#FF1744" : "#780000";
+      ctx.fillRect(0, 0, 320, 240);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 28px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("WAKE UP!", 160, 60);
+
+      ctx.font = "bold 44px sans-serif";
+      ctx.fillText(lcdState.time, 160, 125);
+
+      ctx.font = "bold 16px sans-serif";
+      ctx.fillText("PRESS ANY BUTTON", 160, 190);
+    }
+    else {
+      ctx.fillStyle = "#8892b0";
+      ctx.font = "14px sans-serif";
+      ctx.textAlign = "center";
+      const dots = ".".repeat((Math.floor(now / 400) % 3) + 1);
+      ctx.fillText("Connecting to Pi" + dots, 160, 130);
+    }
+
+    requestAnimationFrame(renderLcdFrame);
+  }
+
+  // Start LCD Animation Loop
+  requestAnimationFrame(renderLcdFrame);
 
   fetchStatus();
   fetchAlarms();
