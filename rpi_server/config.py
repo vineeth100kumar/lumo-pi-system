@@ -29,6 +29,7 @@ HOUR_DROWSY_START = 22  # 10:00 PM
 
 # JARVIS Voice Assistant Settings
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "qwen/qwen3.8-27b")
 VOICE_ENABLED = os.getenv("VOICE_ENABLED", "true").lower() == "true"
 VOICE_INPUT_DEVICE = os.getenv("VOICE_INPUT_DEVICE", "default")
 VOICE_OUTPUT_DEVICE = os.getenv("VOICE_OUTPUT_DEVICE", "default")

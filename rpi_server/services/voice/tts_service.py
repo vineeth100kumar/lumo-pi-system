@@ -7,7 +7,12 @@ import asyncio
 import logging
 import tempfile
 from typing import Optional, Callable
-import edge_tts
+try:
+    import edge_tts
+    HAS_EDGE_TTS = True
+except ImportError:
+    HAS_EDGE_TTS = False
+
 from config import VOICE_NAME
 from services.voice.voice_state import VoiceState, VoiceStateManager
 
@@ -38,6 +43,10 @@ class TTSService:
     async def synthesize(self, text: str) -> bytes:
         """Synthesizes text to MP3 audio bytes in memory."""
         if not text or not text.strip():
+            return b""
+
+        if not HAS_EDGE_TTS:
+            logger.warning("edge-tts library is not installed. Spoken voice audio is skipped.")
             return b""
 
         t0 = time.time()

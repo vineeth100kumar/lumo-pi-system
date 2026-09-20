@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 import httpx
-from config import GROQ_API_KEY
+from config import GROQ_API_KEY, GROQ_LLM_MODEL
 
 logger = logging.getLogger("JarvisBrain")
 
@@ -146,7 +146,7 @@ class JarvisBrain:
     def __init__(
         self,
         api_key: str = GROQ_API_KEY,
-        model: str = "llama-3.3-70b-versatile",
+        model: str = GROQ_LLM_MODEL,
         hub=None,
         services: Optional[Dict[str, Any]] = None
     ):
