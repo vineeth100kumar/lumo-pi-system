@@ -177,21 +177,84 @@ class AudioCaptureService:
             block_size = int(self.sample_rate * 0.04)
             dev = None if self.device == "default" else self.device
 
-            self._stream = sd.RawInputStream(
-                samplerate=self.sample_rate,
-                blocksize=block_size,
-                device=dev,
-                channels=self.channels,
-                dtype='int16',
-                callback=callback
-            )
-            self._stream.start()
+            try:
+                self._stream = sd.RawInputStream(
+                    samplerate=self.sample_rate,
+                    blocksize=block_size,
+                    device=dev,
+                    channels=self.channels,
+                    dtype='int16',
+                    callback=callback
+                )
+                self._stream.start()
+            except Exception as e_rate:
+                logger.warning(f"Failed to open audio stream with {self.sample_rate}Hz: {e_rate}. Trying device default samplerate...")
+                try:
+                    dev_info = sd.query_devices(dev, 'input')
+                    native_rate = int(dev_info.get('default_samplerate', 16000))
+                    self.sample_rate = native_rate
+                    block_size = int(self.sample_rate * 0.04)
+                    self._stream = sd.RawInputStream(
+                        samplerate=self.sample_rate,
+                        blocksize=block_size,
+                        device=dev,
+                        channels=self.channels,
+                        dtype='int16',
+                        callback=callback
+                    )
+                    self._stream.start()
+                except Exception as e_retry:
+                    logger.error(f"Fallback audio stream also failed: {e_retry}")
+                    self.is_capturing = False
+                    return False
+
             self.is_capturing = True
-            logger.info(f"Microphone stream started on device '{self.device}' (16kHz mono).")
+            logger.info(f"Microphone stream started on device '{self.device}' ({self.sample_rate}Hz mono).")
             return True
         except Exception as e:
             logger.warning(f"Could not open audio capture device: {e}")
             self.is_capturing = False
+            return False
+
+    def list_devices(self) -> List[dict]:
+        """Lists all input audio devices detected by sounddevice."""
+        if not self._has_sounddevice:
+            return []
+        try:
+            import sounddevice as sd
+            devs = sd.query_devices()
+            results = []
+            default_in = sd.default.device[0] if sd.default.device else -1
+            for i, d in enumerate(devs):
+                if d.get("max_input_channels", 0) > 0:
+                    results.append({
+                        "index": i,
+                        "name": d.get("name", f"Device {i}"),
+                        "channels": d.get("max_input_channels", 1),
+                        "default_samplerate": int(d.get("default_samplerate", 16000)),
+                        "is_default": (i == default_in)
+                    })
+            return results
+        except Exception as e:
+            logger.warning(f"Error querying input devices: {e}")
+            return []
+
+    def set_device(self, dev_id_or_name, loop=None) -> bool:
+        """Changes the active audio capture device."""
+        try:
+            if isinstance(dev_id_or_name, str) and dev_id_or_name.isdigit():
+                self.device = int(dev_id_or_name)
+            elif dev_id_or_name == "default":
+                self.device = "default"
+            else:
+                self.device = dev_id_or_name
+
+            if self.is_capturing:
+                self.stop_stream()
+                return self.start_background_stream(loop=loop)
+            return True
+        except Exception as e:
+            logger.error(f"Error switching audio device: {e}")
             return False
 
     def stop_stream(self):

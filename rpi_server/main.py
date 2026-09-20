@@ -492,6 +492,23 @@ async def get_last_voice_audio():
         return Response(content=voice_service.tts.last_audio_bytes, media_type="audio/mpeg")
     raise HTTPException(status_code=404, detail="No voice audio available")
 
+class VoiceDeviceSelect(BaseModel):
+    device: str
+
+@app.get("/api/voice/devices")
+async def get_voice_devices():
+    return {
+        "current_device": voice_service.audio_capture.device,
+        "is_capturing": voice_service.audio_capture.is_capturing,
+        "devices": voice_service.audio_capture.list_devices()
+    }
+
+@app.post("/api/voice/device")
+async def set_voice_device(item: VoiceDeviceSelect):
+    loop = asyncio.get_running_loop()
+    ok = voice_service.audio_capture.set_device(item.device, loop=loop)
+    return {"ok": ok, "device": voice_service.audio_capture.device}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=HTTP_PORT, reload=False)

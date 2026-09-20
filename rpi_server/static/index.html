@@ -373,6 +373,23 @@
       <button class="voice-chip" onclick="sendVoicePrompt('Play music')">Play Music</button>
       <button class="voice-chip" onclick="sendVoicePrompt('Set alarm for 7:30 AM')">7:30 Alarm</button>
     </div>
+
+    <!-- Hardware Microphone Selector -->
+    <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06); display:flex; justify-content:space-between; align-items:center; font-size:0.78rem;">
+      <span style="color:var(--muted);">🎙️ Pi Hardware Mic:</span>
+      <select id="voiceDeviceSelect" onchange="changeVoiceDevice(this.value)" style="
+        background: rgba(255,255,255,0.08);
+        border: 1px solid var(--card-border);
+        color: #fff;
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 0.75rem;
+        max-width: 230px;
+        outline: none;
+      ">
+        <option value="default">System Default (PipeWire/ALSA)</option>
+      </select>
+    </div>
   </div>
 
   <!-- 1. Display Screen Switcher (Zero Buttons Needed) -->
@@ -752,6 +769,9 @@
     isPttActive = true;
 
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("INSECURE_CONTEXT");
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunks = [];
 
@@ -812,7 +832,11 @@
       console.warn("Microphone access error:", err);
       isPttActive = false;
       isBrowserRecording = false;
-      alert("Please allow microphone access in your browser to speak with JARVIS.");
+      if (err.message === "INSECURE_CONTEXT" || !window.isSecureContext) {
+        alert("Browser Microphone Notice:\n\nBrowsers block web microphone access over plain HTTP (http://" + window.location.host + ").\n\nOptions:\n1. Use the Bluetooth/USB mic connected directly to the Pi (handled automatically in the background)!\n2. Or in Chrome, visit chrome://flags/#unsafely-treat-insecure-origin-as-secure and add 'http://" + window.location.host + "'\n3. Or type your commands in the text box below.");
+      } else {
+        alert("Microphone permission was denied. Please allow microphone access or use the Bluetooth mic on the Pi.");
+      }
     }
   }
 
@@ -918,6 +942,32 @@
         if (isPttActive) stopPushToTalk();
       }
     });
+
+    fetchVoiceDevices();
+  }
+
+  async function fetchVoiceDevices() {
+    try {
+      const res = await fetch("/api/voice/devices");
+      const data = await res.json();
+      const select = document.getElementById("voiceDeviceSelect");
+      if (!select || !data.devices) return;
+      select.innerHTML = '<option value="default">System Default (PipeWire/ALSA)</option>';
+      data.devices.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d.index;
+        opt.textContent = `${d.name} (${d.channels}ch)`;
+        if (d.index === data.current_device || (data.current_device === "default" && d.is_default)) {
+          opt.selected = true;
+        }
+        select.appendChild(opt);
+      });
+    } catch(e) {}
+  }
+
+  async function changeVoiceDevice(val) {
+    await postApi("/api/voice/device", { device: val });
+    fetchStatus();
   }
 
   let activeBtMac = "";

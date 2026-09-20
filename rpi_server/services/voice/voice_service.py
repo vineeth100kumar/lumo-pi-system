@@ -100,7 +100,11 @@ class VoiceService:
         if not pcm_bytes:
             return
 
-        wav_bytes = AudioCaptureService.pcm_to_wav(pcm_bytes, sample_rate=16000, channels=1)
+        wav_bytes = AudioCaptureService.pcm_to_wav(
+            pcm_bytes,
+            sample_rate=self.audio_capture.sample_rate,
+            channels=self.audio_capture.channels
+        )
         if self._loop:
             asyncio.run_coroutine_threadsafe(
                 self.process_voice_turn(wav_bytes),
