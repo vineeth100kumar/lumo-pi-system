@@ -310,6 +310,18 @@
       </div>
     </div>
 
+    <!-- Insecure Context Warning & 1-Click Upgrade for Phone/Browser Mic -->
+    <div id="insecureContextNotice" style="display:none; background: rgba(255, 159, 10, 0.15); border: 1px solid rgba(255, 159, 10, 0.4); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font-size: 0.8rem; line-height: 1.45; color: #ffb300;">
+      <div style="font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+        <span>🔒</span> <span>Phone / Browser Mic Requires HTTPS</span>
+      </div>
+      <div>Mobile browsers block microphone access over plain HTTP. Tap below to switch to HTTPS mode:</div>
+      <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <a id="httpsUpgradeLink" href="#" style="display:inline-block; padding: 5px 12px; background: #ff9f0a; color: #000; font-weight: 700; text-decoration: none; border-radius: 8px; font-size: 0.78rem;">Switch to HTTPS 👉</a>
+        <span style="font-size: 0.72rem; color: #aaa;">(Tap "Advanced → Proceed" on the security warning)</span>
+      </div>
+    </div>
+
     <!-- Push-To-Talk Center Button -->
     <div style="display:flex; flex-direction:column; align-items:center; margin: 10px 0 14px 0;">
       <button id="pttButton" class="ptt-btn" style="
@@ -703,12 +715,47 @@
 
   // ===================== JARVIS VOICE COMPANION JS =====================
   let mediaRecorder = null;
+  let mediaStream = null;
   let audioChunks = [];
-  let isBrowserRecording = false;
+  let isRecording = false;
+  let isStartingRecord = false;
+  let recordStartTime = 0;
+  let pressStartTime = 0;
+  let didHold = false;
+  let pressTimer = null;
+  let recordTimer = null;
   let audioCtx = null;
   let analyserNode = null;
   let animFrameId = null;
-  let isPttActive = false;
+  let jarvisAudio = new Audio();
+  let audioUnlocked = false;
+
+  function unlockAudioPlayback() {
+    if (audioUnlocked) return;
+    try {
+      if (!jarvisAudio) jarvisAudio = new Audio();
+      // Play 1-sample silent WAV during user gesture to lift iOS/Android autoplay blocks
+      jarvisAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+      jarvisAudio.play().then(() => { audioUnlocked = true; }).catch(() => {});
+    } catch (e) {}
+  }
+
+  function getSupportedAudioMime() {
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/aac",
+      "audio/ogg;codecs=opus",
+      "audio/wav"
+    ];
+    for (const c of candidates) {
+      if (window.MediaRecorder && typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(c)) {
+        return c;
+      }
+    }
+    return "";
+  }
 
   function updateVoiceUI(v) {
     if (!v) return;
@@ -717,6 +764,7 @@
     const text = document.getElementById("voiceStateText");
     const pttBtn = document.getElementById("pttButton");
     const pttLabel = document.getElementById("pttLabel");
+    const pttIcon = document.getElementById("pttIcon");
 
     const st = v.state || "IDLE";
     text.textContent = st;
@@ -726,9 +774,10 @@
       dot.style.boxShadow = "0 0 8px #30d158";
       badge.style.background = "rgba(48,209,88,0.2)";
       badge.style.color = "#30d158";
-      if (!isBrowserRecording) {
+      if (!isRecording) {
         pttBtn.className = "ptt-btn recording";
         pttLabel.textContent = "Listening to Mic...";
+        if (pttIcon) pttIcon.textContent = "🎙️";
       }
     } else if (st === "THINKING") {
       dot.style.background = "#ff9f0a";
@@ -737,6 +786,7 @@
       badge.style.color = "#ff9f0a";
       pttBtn.className = "ptt-btn thinking";
       pttLabel.textContent = "JARVIS is Thinking...";
+      if (pttIcon) pttIcon.textContent = "⚙️";
     } else if (st === "SPEAKING") {
       dot.style.background = "#00E5FF";
       dot.style.boxShadow = "0 0 10px #00E5FF";
@@ -744,14 +794,16 @@
       badge.style.color = "#00E5FF";
       pttBtn.className = "ptt-btn speaking";
       pttLabel.textContent = "JARVIS is Speaking...";
+      if (pttIcon) pttIcon.textContent = "🔊";
     } else {
       dot.style.background = "#888";
       dot.style.boxShadow = "none";
       badge.style.background = "rgba(255,255,255,0.08)";
       badge.style.color = "var(--muted)";
-      if (!isBrowserRecording) {
+      if (!isRecording && !isStartingRecord) {
         pttBtn.className = "ptt-btn";
         pttLabel.textContent = "Hold Spacebar or Click to Speak";
+        if (pttIcon) pttIcon.textContent = "🎙️";
       }
     }
 
@@ -764,95 +816,162 @@
     }
   }
 
-  async function startPushToTalk() {
-    if (isPttActive || isBrowserRecording) return;
-    isPttActive = true;
+  function resetPttButton() {
+    isRecording = false;
+    isStartingRecord = false;
+    const pttBtn = document.getElementById("pttButton");
+    const pttLabel = document.getElementById("pttLabel");
+    const pttIcon = document.getElementById("pttIcon");
+    if (pttBtn) pttBtn.className = "ptt-btn";
+    if (pttLabel) pttLabel.textContent = "Hold Spacebar or Click to Speak";
+    if (pttIcon) pttIcon.textContent = "🎙️";
+  }
+
+  async function startRecording() {
+    if (isRecording || isStartingRecord) return;
+    isStartingRecord = true;
+    unlockAudioPlayback();
+
+    const pttBtn = document.getElementById("pttButton");
+    const pttLabel = document.getElementById("pttLabel");
+    const pttIcon = document.getElementById("pttIcon");
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("INSECURE_CONTEXT");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      mediaStream = stream;
       audioChunks = [];
 
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioCtx.createMediaStreamSource(stream);
-      analyserNode = audioCtx.createAnalyser();
-      analyserNode.fftSize = 256;
-      source.connect(analyserNode);
+      // Web Audio API VU meter
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        analyserNode = audioCtx.createAnalyser();
+        analyserNode.fftSize = 256;
+        source.connect(analyserNode);
 
-      const vuContainer = document.getElementById("vuMeterContainer");
-      const vuBar = document.getElementById("vuMeterBar");
-      if (vuContainer) vuContainer.style.display = "block";
+        const vuContainer = document.getElementById("vuMeterContainer");
+        const vuBar = document.getElementById("vuMeterBar");
+        if (vuContainer) vuContainer.style.display = "block";
 
-      const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
-      function updateVu() {
-        if (!isBrowserRecording) return;
-        analyserNode.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        let avg = sum / dataArray.length;
-        let pct = Math.min(100, Math.round((avg / 128) * 100));
-        if (vuBar) vuBar.style.width = pct + "%";
-        animFrameId = requestAnimationFrame(updateVu);
+        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+        function updateVu() {
+          if (!isRecording) return;
+          analyserNode.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+          let avg = sum / dataArray.length;
+          let pct = Math.min(100, Math.round((avg / 128) * 100));
+          if (vuBar) vuBar.style.width = pct + "%";
+          animFrameId = requestAnimationFrame(updateVu);
+        }
+        updateVu();
+      } catch (e) {
+        console.warn("VU meter init note:", e);
       }
 
-      mediaRecorder = new MediaRecorder(stream);
+      const chosenMime = getSupportedAudioMime();
+      const options = chosenMime ? { mimeType: chosenMime } : {};
+      mediaRecorder = new MediaRecorder(stream, options);
+
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunks.push(e.data);
+        if (e.data && e.data.size > 0) {
+          audioChunks.push(e.data);
+        }
       };
 
       mediaRecorder.onstop = async () => {
         if (animFrameId) cancelAnimationFrame(animFrameId);
+        if (recordTimer) { clearInterval(recordTimer); recordTimer = null; }
+        const vuContainer = document.getElementById("vuMeterContainer");
         if (vuContainer) vuContainer.style.display = "none";
-        stream.getTracks().forEach(t => t.stop());
+
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(t => t.stop());
+          mediaStream = null;
+        }
         if (audioCtx && audioCtx.state !== 'closed') {
-          audioCtx.close();
+          try { audioCtx.close(); } catch(e) {}
         }
 
-        const pttBtn = document.getElementById("pttButton");
-        const pttLabel = document.getElementById("pttLabel");
-        pttBtn.className = "ptt-btn thinking";
-        pttLabel.textContent = "Processing speech...";
+        const dur = Date.now() - recordStartTime;
+        if (audioChunks.length === 0 || dur < 350) {
+          // Disregard accidental ultra-short taps
+          resetPttButton();
+          return;
+        }
 
-        const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-        await uploadVoiceAudio(audioBlob);
+        if (pttBtn) pttBtn.className = "ptt-btn thinking";
+        if (pttLabel) pttLabel.textContent = "JARVIS is Thinking...";
+        if (pttIcon) pttIcon.textContent = "⚙️";
+
+        const finalMime = mediaRecorder.mimeType || chosenMime || "audio/webm";
+        const audioBlob = new Blob(audioChunks, { type: finalMime });
+        await uploadVoiceAudio(audioBlob, finalMime);
       };
 
-      mediaRecorder.start();
-      isBrowserRecording = true;
+      mediaRecorder.start(100);
+      isRecording = true;
+      recordStartTime = Date.now();
 
-      const pttBtn = document.getElementById("pttButton");
-      const pttLabel = document.getElementById("pttLabel");
-      pttBtn.className = "ptt-btn recording";
-      pttLabel.textContent = "Listening... Release to Send";
-      updateVu();
+      if (pttBtn) pttBtn.className = "ptt-btn recording";
+      if (pttIcon) pttIcon.textContent = "🔴";
+      if (pttLabel) pttLabel.textContent = "Listening... Tap to Send";
+
+      let sec = 0;
+      recordTimer = setInterval(() => {
+        sec++;
+        if (isRecording && pttLabel) {
+          pttLabel.textContent = `Listening (${sec}s)... Tap to Send`;
+        }
+      }, 1000);
 
     } catch (err) {
-      console.warn("Microphone access error:", err);
-      isPttActive = false;
-      isBrowserRecording = false;
+      console.error("Microphone access error:", err);
+      resetPttButton();
       if (err.message === "INSECURE_CONTEXT" || !window.isSecureContext) {
-        alert("Browser Microphone Notice:\n\nBrowsers block web microphone access over plain HTTP (http://" + window.location.host + ").\n\nOptions:\n1. Use the Bluetooth/USB mic connected directly to the Pi (handled automatically in the background)!\n2. Or in Chrome, visit chrome://flags/#unsafely-treat-insecure-origin-as-secure and add 'http://" + window.location.host + "'\n3. Or type your commands in the text box below.");
+        const notice = document.getElementById("insecureContextNotice");
+        if (notice) notice.style.display = "block";
+        alert("Microphone Notice:\n\nBrowsers block web microphone access over plain HTTP (http://" + window.location.host + ").\n\nPlease switch to HTTPS at: https://" + window.location.hostname + ":" + (window.location.port || 8080) + " (accept the self-signed certificate in Advanced options) to use your phone or computer mic.");
+      } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        alert("Microphone permission was not granted. Please check your browser's site permissions and allow Microphone access.");
       } else {
-        alert("Microphone permission was denied. Please allow microphone access or use the Bluetooth mic on the Pi.");
+        alert("Microphone error: " + (err.message || err.name));
       }
+    } finally {
+      isStartingRecord = false;
     }
   }
 
-  function stopPushToTalk() {
-    if (!isPttActive && !isBrowserRecording) return;
-    isPttActive = false;
+  function stopRecording() {
+    if (!isRecording && !isStartingRecord) return;
+    if (isStartingRecord) {
+      setTimeout(stopRecording, 200);
+      return;
+    }
+    isRecording = false;
     if (mediaRecorder && mediaRecorder.state === "recording") {
+      try { mediaRecorder.requestData(); } catch(e) {}
       mediaRecorder.stop();
     }
-    isBrowserRecording = false;
   }
 
-  async function uploadVoiceAudio(blob) {
+  async function uploadVoiceAudio(blob, mimeType) {
     try {
       const res = await fetch("/api/voice/push-to-talk", {
         method: "POST",
+        headers: {
+          "Content-Type": mimeType || "audio/webm"
+        },
         body: blob
       });
       const data = await res.json();
@@ -862,26 +981,27 @@
       }
       if (data.reply) {
         document.getElementById("voiceJarvisText").textContent = `"${data.reply}"`;
-        const audio = new Audio("/api/voice/last-audio.mp3?t=" + Date.now());
-        audio.play().catch(e => console.log("Web audio play note:", e));
+        if (!jarvisAudio) jarvisAudio = new Audio();
+        jarvisAudio.src = "/api/voice/last-audio.mp3?t=" + Date.now();
+        jarvisAudio.play().catch(e => console.log("Web audio play note:", e));
       }
       fetchStatus();
     } catch (e) {
       console.error("Failed to send voice payload:", e);
     } finally {
-      const pttBtn = document.getElementById("pttButton");
-      const pttLabel = document.getElementById("pttLabel");
-      pttBtn.className = "ptt-btn";
-      pttLabel.textContent = "Hold Spacebar or Click to Speak";
+      resetPttButton();
     }
   }
 
   async function sendVoicePrompt(text) {
     if (!text || !text.trim()) return;
+    unlockAudioPlayback();
     const pttBtn = document.getElementById("pttButton");
     const pttLabel = document.getElementById("pttLabel");
-    pttBtn.className = "ptt-btn thinking";
-    pttLabel.textContent = "JARVIS is Thinking...";
+    const pttIcon = document.getElementById("pttIcon");
+    if (pttBtn) pttBtn.className = "ptt-btn thinking";
+    if (pttLabel) pttLabel.textContent = "JARVIS is Thinking...";
+    if (pttIcon) pttIcon.textContent = "⚙️";
 
     document.getElementById("voiceUserBox").style.display = "block";
     document.getElementById("voiceUserText").textContent = `"${text}"`;
@@ -895,15 +1015,15 @@
       const data = await res.json();
       if (data.reply) {
         document.getElementById("voiceJarvisText").textContent = `"${data.reply}"`;
-        const audio = new Audio("/api/voice/last-audio.mp3?t=" + Date.now());
-        audio.play().catch(e => console.log("Web audio note:", e));
+        if (!jarvisAudio) jarvisAudio = new Audio();
+        jarvisAudio.src = "/api/voice/last-audio.mp3?t=" + Date.now();
+        jarvisAudio.play().catch(e => console.log("Web audio note:", e));
       }
       fetchStatus();
     } catch (e) {
       console.error("Text command failed:", e);
     } finally {
-      pttBtn.className = "ptt-btn";
-      pttLabel.textContent = "Hold Spacebar or Click to Speak";
+      resetPttButton();
     }
   }
 
@@ -918,19 +1038,52 @@
   function initVoiceControls() {
     const pttBtn = document.getElementById("pttButton");
     if (pttBtn) {
-      pttBtn.addEventListener("mousedown", (e) => { e.preventDefault(); startPushToTalk(); });
-      pttBtn.addEventListener("mouseup", (e) => { e.preventDefault(); stopPushToTalk(); });
-      pttBtn.addEventListener("mouseleave", (e) => { if (isPttActive) stopPushToTalk(); });
-      pttBtn.addEventListener("touchstart", (e) => { e.preventDefault(); startPushToTalk(); }, { passive: false });
-      pttBtn.addEventListener("touchend", (e) => { e.preventDefault(); stopPushToTalk(); }, { passive: false });
+      // Pointer events seamlessly handle Touch, Pen, and Mouse
+      pttBtn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        unlockAudioPlayback();
+        pressStartTime = Date.now();
+        didHold = false;
+
+        if (isRecording) {
+          // Second tap stops recording and sends
+          stopRecording();
+          return;
+        }
+
+        startRecording();
+
+        pressTimer = setTimeout(() => {
+          didHold = true;
+        }, 350);
+      });
+
+      pttBtn.addEventListener("pointerup", (e) => {
+        e.preventDefault();
+        clearTimeout(pressTimer);
+        if (didHold && isRecording) {
+          // User held the button down and now released
+          stopRecording();
+        }
+        // If not didHold, user did a single tap: let it keep recording until next tap
+      });
+
+      pttBtn.addEventListener("pointercancel", (e) => {
+        clearTimeout(pressTimer);
+        if (isRecording && didHold) stopRecording();
+      });
     }
 
+    // Keyboard Spacebar: Hold spacebar to speak, release to send
     window.addEventListener("keydown", (e) => {
       if (e.code === "Space") {
         const tag = document.activeElement ? document.activeElement.tagName : "";
         if (tag === "INPUT" || tag === "TEXTAREA") return;
         e.preventDefault();
-        if (!isPttActive) startPushToTalk();
+        if (!isRecording && !isStartingRecord) {
+          unlockAudioPlayback();
+          startRecording();
+        }
       }
     });
 
@@ -939,9 +1092,21 @@
         const tag = document.activeElement ? document.activeElement.tagName : "";
         if (tag === "INPUT" || tag === "TEXTAREA") return;
         e.preventDefault();
-        if (isPttActive) stopPushToTalk();
+        if (isRecording) {
+          stopRecording();
+        }
       }
     });
+
+    // Check secure context and configure HTTPS upgrade banner
+    if (!window.isSecureContext && window.location.protocol === "http:") {
+      const notice = document.getElementById("insecureContextNotice");
+      const link = document.getElementById("httpsUpgradeLink");
+      if (notice && link) {
+        link.href = `https://${window.location.hostname}:${window.location.port || 8080}`;
+        notice.style.display = "block";
+      }
+    }
 
     fetchVoiceDevices();
   }

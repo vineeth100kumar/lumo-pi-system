@@ -116,14 +116,14 @@ class VoiceService:
         if self.state_mgr.current_state == VoiceState.LISTENING:
             self.state_mgr.current_volume = min(1.0, rms * 4.0)
 
-    async def process_voice_turn(self, audio_bytes: bytes) -> Dict[str, Any]:
+    async def process_voice_turn(self, audio_bytes: bytes, mime_type: Optional[str] = None) -> Dict[str, Any]:
         """Processes a full conversational turn: STT -> Brain (Tools) -> TTS -> ESP32 sync."""
         async with self._turn_lock:
             # 1. Transition to THINKING
             await self.state_mgr.set_state(VoiceState.THINKING)
 
             # 2. Transcribe via Groq Whisper
-            transcript = await self.stt.transcribe_wav(audio_bytes)
+            transcript = await self.stt.transcribe_wav(audio_bytes, mime_type=mime_type)
             if not transcript or not transcript.strip():
                 logger.info("No speech detected in audio turn.")
                 await self.state_mgr.set_state(VoiceState.IDLE)

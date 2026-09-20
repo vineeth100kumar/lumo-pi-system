@@ -476,7 +476,8 @@ async def voice_push_to_talk(request: Request):
     audio_bytes = await request.body()
     if not audio_bytes or len(audio_bytes) < 100:
         raise HTTPException(status_code=400, detail="Empty or invalid audio data")
-    res = await voice_service.process_voice_turn(audio_bytes)
+    mime_type = request.headers.get("content-type")
+    res = await voice_service.process_voice_turn(audio_bytes, mime_type=mime_type)
     return res
 
 @app.post("/api/voice/text-command")
@@ -510,5 +511,32 @@ async def set_voice_device(item: VoiceDeviceSelect):
     return {"ok": ok, "device": voice_service.audio_capture.device}
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=HTTP_PORT, reload=False)
+    from generate_ssl import generate_cert
+
+    cert_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cert.pem")
+    key_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key.pem")
+
+    enable_ssl = os.getenv("ENABLE_SSL", "true").lower() == "true"
+    ssl_kwargs = {}
+
+    if enable_ssl:
+        if not (os.path.exists(cert_path) and os.path.exists(key_path)):
+            try:
+                logger.info("Auto-generating SSL certificate for mobile browser microphone access...")
+                generate_cert(cert_path, key_path)
+            except Exception as e:
+                logger.warning(f"Could not auto-generate SSL cert: {e}")
+
+        if os.path.exists(cert_path) and os.path.exists(key_path):
+            logger.info(f"🔒 HTTPS enabled: cert={cert_path}, key={key_path}")
+            logger.info(f"👉 Access dashboard securely at: https://<pi-ip>:{HTTP_PORT} to use phone/laptop mic")
+            ssl_kwargs["ssl_certfile"] = cert_path
+            ssl_kwargs["ssl_keyfile"] = key_path
+        else:
+            logger.warning("Starting server in plain HTTP (client browser mic requires HTTPS)")
+    else:
+        logger.info("SSL disabled via ENABLE_SSL=false. Starting server in plain HTTP.")
+
+    uvicorn.run("main:app", host="0.0.0.0", port=HTTP_PORT, reload=False, **ssl_kwargs)
