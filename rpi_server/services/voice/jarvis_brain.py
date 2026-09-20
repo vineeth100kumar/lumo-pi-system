@@ -1,18 +1,13 @@
 import time
 import json
 import logging
+import datetime
+import pytz
 from typing import Dict, Any, List, Optional
 import httpx
 from config import GROQ_API_KEY, GROQ_LLM_MODEL
 
 logger = logging.getLogger("JarvisBrain")
-
-JARVIS_SYSTEM_PROMPT = """You are JARVIS, an articulate, witty, and ultra-reliable British AI assistant embedded in a cybernetic desk companion robot called LUMO.
-- Address the user respectfully as "sir".
-- Keep spoken replies concise and crisp: ideally 1 to 2 sentences maximum, as your voice is spoken aloud via TTS.
-- When the user asks you to perform an action (change eyes, play music, switch screen, check vitals, set alarm, add task), call the relevant tool immediately.
-- If no tool is needed, provide a thoughtful, witty, or helpful answer.
-"""
 
 JARVIS_TOOLS = [
     {
@@ -73,7 +68,7 @@ JARVIS_TOOLS = [
         "type": "function",
         "function": {
             "name": "control_media",
-            "description": "Controls audio playback on the connected phone (YouTube Music / Apple Music / Spotify).",
+            "description": "Controls audio playback on the connected phone or Spotify.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -141,8 +136,105 @@ JARVIS_TOOLS = [
     }
 ]
 
+def sanitize_spoken_text(text: str) -> str:
+    """Cleans up unicode quotes, asterisks, markdown, and formatting for crystal-clear TTS and display."""
+    if not text:
+        return ""
+    replacements = {
+        "\u2018": "'", "\u2019": "'",
+        "\u201c": '"', "\u201d": '"',
+        "\u2014": " - ", "\u2013": " - ",
+        "**": "", "*": "",
+        "`": "", "#": ""
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    # Collapse consecutive whitespace and newlines
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    return " ".join(lines).strip()
+
+def build_system_prompt(services: Dict[str, Any]) -> str:
+    """Dynamically creates the JARVIS prompt with real-time temporal and environment context."""
+    tz = pytz.timezone("Asia/Kolkata")
+    now = datetime.datetime.now(tz)
+    day_name = now.strftime("%A")
+    date_str = now.strftime("%d %B %Y")
+    time_str = now.strftime("%I:%M %p")
+
+    # Current screen & visor optics
+    get_screen = services.get("get_screen")
+    current_screen = get_screen() if callable(get_screen) else services.get("screen", "FACE")
+    anim_engine = services.get("anim_engine")
+    optic_color = getattr(anim_engine, "current_eye_color", "cyan") if anim_engine else "cyan"
+
+    # Music info
+    music_info = "Idle (nothing playing)"
+    ios_companion = services.get("ios_companion")
+    spotify = services.get("spotify")
+    if ios_companion and getattr(ios_companion, "is_playing", False):
+        music_info = f"'{getattr(ios_companion, 'title', 'Track')}' by {getattr(ios_companion, 'artist', 'Artist')} (Phone)"
+    elif spotify and getattr(spotify, "is_playing", False):
+        music_info = f"'{getattr(spotify, 'title', 'Track')}' by {getattr(spotify, 'artist', 'Artist')} (Spotify)"
+
+    # Weather
+    weather = services.get("weather")
+    weather_info = "25°C, Bangalore, India"
+    if weather and getattr(weather, "last_temp", None):
+        weather_info = f"{weather.last_temp}°C ({weather.last_icon}), Bangalore, India"
+
+    # Alarms
+    alarms = services.get("alarms")
+    alarm_info = "None"
+    if alarms and hasattr(alarms, "get_all"):
+        try:
+            active = [f"{a['h']:02d}:{a['m']:02d} ({a.get('label', 'Alarm')})" for a in alarms.get_all() if a.get("enabled")]
+            if active:
+                alarm_info = ", ".join(active)
+        except Exception:
+            pass
+
+    # Tasks
+    tasks = services.get("tasks")
+    task_info = "None"
+    if tasks and hasattr(tasks, "get_all"):
+        try:
+            all_tasks = tasks.get_all()
+            if all_tasks:
+                task_info = "; ".join(all_tasks[:5])
+        except Exception:
+            pass
+
+    # Vitals
+    system_stats = services.get("system_stats")
+    vital_info = "Nominal"
+    if system_stats and hasattr(system_stats, "get_all"):
+        try:
+            stats = system_stats.get_all()
+            vital_info = f"CPU {stats.get('cpu_temp')}°C, RAM {stats.get('ram_pct')}%, Disk {stats.get('disk_pct')}%"
+        except Exception:
+            pass
+
+    return f"""You are JARVIS, an articulate, witty, and exceptionally intelligent British AI assistant embedded in a cybernetic desk companion robot called LUMO.
+- Respectfully address the user as "sir".
+- Keep spoken replies concise and crisp: ideally 1 to 2 sentences maximum, as your voice is spoken aloud via TTS.
+- Current Real-time Context:
+  • Date & Day: {day_name}, {date_str}
+  • Local Time: {time_str} (IST)
+  • Location: Bangalore, India
+  • Current Weather: {weather_info}
+  • Active Screen: {current_screen} (Visor Optics: {optic_color})
+  • Music Playback: {music_info}
+  • Active Alarms: {alarm_info}
+  • To-Do Tasks: {task_info}
+  • Hardware Vitals: {vital_info}
+- You possess vast world knowledge across science, history, mathematics, technology, literature, and general trivia. Answer questions intelligently, accurately, and smartly using your knowledge.
+- When the user asks you to perform an action on LUMO (change eyes, play music, switch screen, check vitals, set alarm, add task), call the relevant tool immediately.
+- If no tool is needed (e.g. asking the date, time, weather, facts, or casual conversation), answer directly and crisply.
+- Do not output markdown asterisks, bold syntax, or bullet points in spoken responses.
+"""
+
 class JarvisBrain:
-    """LLM Agent with tool calling using Groq Llama 3.3-70B (~200ms time-to-first-token)."""
+    """Intelligent LLM Agent with tool calling and automatic failover using Groq."""
     def __init__(
         self,
         api_key: str = GROQ_API_KEY,
@@ -152,11 +244,12 @@ class JarvisBrain:
     ):
         self.api_key = api_key
         self.model = model
+        self.fallback_model = "openai/gpt-oss-20b"
         self.hub = hub
         self.services = services or {}
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
         self.history: List[Dict[str, Any]] = []
-        self.max_history_turns = 6
+        self.max_history_turns = 4
 
     def is_configured(self) -> bool:
         return bool(self.api_key and len(self.api_key) > 5)
@@ -199,7 +292,7 @@ class JarvisBrain:
                 ios_companion = svc.get("ios_companion")
                 spotify = svc.get("spotify")
 
-                if ios_companion and ios_companion.is_connected:
+                if ios_companion and getattr(ios_companion, "is_connected", False):
                     if action == "next": await ios_companion.next_track()
                     elif action == "prev": await ios_companion.prev_track()
                     else: await ios_companion.toggle_play()
@@ -252,86 +345,108 @@ class JarvisBrain:
             return f"Error executing {name}: {str(e)}"
 
     async def ask(self, user_prompt: str) -> str:
-        """Processes user voice prompt, executes any needed tools, and returns spoken reply."""
+        """Processes user voice prompt, executes tools, and returns spoken reply with automatic failover."""
         if not self.is_configured():
             return "My cloud intelligence API key is not configured, sir."
 
         t0 = time.time()
-        # Add user message to history
+        # Add user message to history (trimmed to preserve token budget)
         self.history.append({"role": "user", "content": user_prompt})
         if len(self.history) > self.max_history_turns * 2:
             self.history = self.history[-self.max_history_turns * 2:]
 
-        messages = [{"role": "system", "content": JARVIS_SYSTEM_PROMPT}] + self.history
+        system_prompt = build_system_prompt(self.services)
+        messages = [{"role": "system", "content": system_prompt}] + self.history
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "tools": JARVIS_TOOLS,
-            "tool_choice": "auto",
-            "temperature": 0.6,
-            "max_tokens": 150
-        }
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(self.api_url, headers=headers, json=payload)
-                if res.status_code != 200:
-                    logger.error(f"Groq LLM HTTP {res.status_code}: {res.text}")
-                    return "I encountered a network hiccup with my core systems, sir."
+        # Models to try (Primary -> Fallback)
+        models_to_try = [self.model]
+        if self.fallback_model and self.fallback_model != self.model:
+            models_to_try.append(self.fallback_model)
 
-                data = res.json()
-                choice = data["choices"][0]
-                message = choice["message"]
+        last_error = ""
 
-                # Check if tool calling was triggered
-                tool_calls = message.get("tool_calls", [])
-                if tool_calls:
-                    messages.append(message)
-                    for tc in tool_calls:
-                        fn_name = tc["function"]["name"]
-                        fn_args = {}
-                        try:
-                            fn_args = json.loads(tc["function"]["arguments"])
-                        except Exception:
-                            pass
+        for candidate_model in models_to_try:
+            payload = {
+                "model": candidate_model,
+                "messages": messages,
+                "tools": JARVIS_TOOLS,
+                "tool_choice": "auto",
+                "temperature": 0.5,
+                "max_tokens": 150
+            }
 
-                        tool_result = await self.execute_tool(fn_name, fn_args)
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "name": fn_name,
-                            "content": tool_result
-                        })
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    res = await client.post(self.api_url, headers=headers, json=payload)
+                    if res.status_code == 429:
+                        logger.warning(f"Model {candidate_model} hit rate limit (429). Trying fallback...")
+                        last_error = "rate_limit"
+                        continue
+                    elif res.status_code != 200:
+                        logger.error(f"Groq LLM ({candidate_model}) HTTP {res.status_code}: {res.text}")
+                        last_error = f"http_{res.status_code}"
+                        continue
 
-                    # Second round: Get conversational confirmation from LLM
-                    followup = await client.post(
-                        self.api_url,
-                        headers=headers,
-                        json={
-                            "model": self.model,
-                            "messages": messages,
-                            "temperature": 0.5,
-                            "max_tokens": 120
-                        }
-                    )
-                    if followup.status_code == 200:
-                        f_data = followup.json()
-                        reply = f_data["choices"][0]["message"]["content"].strip()
+                    data = res.json()
+                    choice = data["choices"][0]
+                    message = choice["message"]
+
+                    # Check if tool calling was triggered
+                    tool_calls = message.get("tool_calls") or []
+                    if tool_calls:
+                        messages.append(message)
+                        for tc in tool_calls:
+                            fn_name = tc["function"]["name"]
+                            fn_args = {}
+                            try:
+                                fn_args = json.loads(tc["function"]["arguments"])
+                            except Exception:
+                                pass
+
+                            tool_result = await self.execute_tool(fn_name, fn_args)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "name": fn_name,
+                                "content": tool_result
+                            })
+
+                        # Second round: Get conversational confirmation from LLM
+                        followup = await client.post(
+                            self.api_url,
+                            headers=headers,
+                            json={
+                                "model": candidate_model,
+                                "messages": messages,
+                                "temperature": 0.5,
+                                "max_tokens": 120
+                            }
+                        )
+                        if followup.status_code == 200:
+                            f_data = followup.json()
+                            raw_content = f_data["choices"][0]["message"].get("content") or ""
+                            reply = sanitize_spoken_text(raw_content) or "Action completed, sir."
+                        else:
+                            reply = "Action completed, sir."
                     else:
-                        reply = "Action executed, sir."
-                else:
-                    reply = message.get("content", "").strip()
+                        raw_content = message.get("content") or ""
+                        reply = sanitize_spoken_text(raw_content) or "I am at your service, sir."
 
-                elapsed = (time.time() - t0) * 1000.0
-                logger.info(f"Jarvis Brain replied in {elapsed:.1f}ms: '{reply}'")
-                self.history.append({"role": "assistant", "content": reply})
-                return reply
+                    elapsed = (time.time() - t0) * 1000.0
+                    logger.info(f"Jarvis Brain ({candidate_model}) replied in {elapsed:.1f}ms: '{reply}'")
+                    self.history.append({"role": "assistant", "content": reply})
+                    return reply
 
-        except Exception as e:
-            logger.error(f"Jarvis Brain error: {e}")
-            return "I apologize, sir, my neural processing encountered an error."
+            except Exception as e:
+                logger.error(f"Error querying {candidate_model}: {e}")
+                last_error = str(e)
+                continue
+
+        if last_error == "rate_limit":
+            return "My neural processors are briefly saturated, sir. Please repeat in a few seconds."
+        return "I apologize, sir, my neural processing encountered a momentary hiccup."

@@ -57,6 +57,21 @@ async def set_screen_mode(screen: str):
         await system_stats.poll(hub, get_current_screen)
     logger.info(f"Screen switched -> {current_screen}")
 
+# Wire all live services into JARVIS Voice Brain
+voice_service.update_services({
+    "spotify": spotify,
+    "weather": weather,
+    "alarms": alarms,
+    "emotion": emotion,
+    "tasks": tasks,
+    "system_stats": system_stats,
+    "anim_engine": anim_engine,
+    "ios_companion": ios_companion,
+    "bt_manager": bt_manager,
+    "set_screen": set_screen_mode,
+    "get_screen": get_current_screen,
+}, hub=hub)
+
 # ===================== MDNS =====================
 def get_local_ips():
     ips = []
