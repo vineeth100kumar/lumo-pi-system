@@ -16,7 +16,7 @@ from zeroconf.asyncio import AsyncZeroconf, AsyncServiceInfo
 
 from config import WS_PORT, HTTP_PORT, MDNS_NAME, SAGE_REFRESH_SECONDS
 from ws_hub import WSHub
-from services.sage_client import SageClient
+from services.sage_client import SageClient, key_search_report
 from services.spotify import SpotifyService
 from services.weather import WeatherService
 from services.alarms import AlarmManager
@@ -191,9 +191,11 @@ async def lifespan(app: FastAPI):
     if not sage.is_configured:
         logger.warning(
             "No Sage API key found, so tasks and alarms will be empty. "
-            "Add 'EnvironmentFile=-/etc/sage/sage.env' to lumo.service, or set "
-            "SAGE_API_KEY in .env."
+            "Put SAGE_API_KEY in rpi_server/.env (the same key the Sage app "
+            "asks for), or run Lumo under systemd, where lumo.service reads "
+            "it from /etc/sage/sage.env."
         )
+        logger.warning(f"Looked in: {key_search_report()}")
     await refresh_from_sage()
     sage_listener = asyncio.create_task(sage.listen(on_sage_event))
 

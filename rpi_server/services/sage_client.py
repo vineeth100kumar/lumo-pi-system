@@ -58,14 +58,34 @@ def _key_from_env_file(path: str) -> str:
     return ""
 
 
+def find_secret_files() -> list:
+    """
+    Every place Sage's generated key file might be, best guess first.
+
+    Sage writes a random key into its data directory when API_SECRET was never
+    configured, which is the common case. That directory sits inside whatever
+    the checkout was called, under whichever account runs it, so the checkout
+    name is not worth guessing at: one level under the home directory covers
+    it whatever it is called.
+    """
+    found = [Path(SAGE_SECRET_FILE)]
+    try:
+        found.extend(sorted(Path.home().glob("*/data/api_secret.txt")))
+    except Exception:
+        pass
+    return found
+
+
 def resolve_api_key() -> str:
     """
     Find Sage's key without ever storing a second copy of it.
 
-    The key is written in exactly one place, /etc/sage/sage.env, which is
-    root-owned and unreadable by the pi user. Lumo's systemd unit therefore
-    carries the same EnvironmentFile line Sage's does: systemd reads the file
-    as root and hands the value down. The rest is for running main.py by hand.
+    Sage keeps it in /etc/sage/sage.env, which is root-owned and unreadable by
+    the account either service runs as. Under systemd that is not a problem:
+    Lumo's unit carries the same EnvironmentFile line Sage's does, so systemd
+    reads the file as root and hands the value down. Run by hand, none of that
+    applies, so the generated key file is looked for and SAGE_API_KEY in .env
+    is always the last word.
     """
     for candidate in (SAGE_API_KEY, os.environ.get("API_SECRET", "")):
         if candidate and candidate.strip():
@@ -73,18 +93,10 @@ def resolve_api_key() -> str:
 
     from_file = _key_from_env_file(SAGE_ENV_FILE)
     if from_file:
+        logger.info(f"Using the Sage key from {SAGE_ENV_FILE}")
         return from_file
 
-    # Sage writes a random key into its data directory when none was
-    # configured, which is the likeliest case on a Pi where API_SECRET was
-    # never set. Where that directory is depends on the user and on what the
-    # checkout was called, so look in the usual places rather than one.
-    home = Path.home()
-    candidates = [Path(SAGE_SECRET_FILE)] + [
-        home / name / "data" / "api_secret.txt"
-        for name in ("sage-os", "TASK_MANAGER", "task_manager", "sage")
-    ]
-    for candidate in candidates:
+    for candidate in find_secret_files():
         try:
             key = candidate.read_text(encoding="utf-8").strip()
         except Exception:
@@ -94,6 +106,12 @@ def resolve_api_key() -> str:
             return key
     return ""
 
+
+def key_search_report() -> str:
+    """The places that were looked in, for the warning when none turned up."""
+    places = [f"SAGE_API_KEY or API_SECRET in the environment or .env", SAGE_ENV_FILE]
+    places.extend(str(p) for p in find_secret_files())
+    return "; ".join(places)
 
 class SageClient:
     """Thin async wrapper over Sage's REST API and live websocket."""
