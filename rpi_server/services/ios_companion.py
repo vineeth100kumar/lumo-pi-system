@@ -86,48 +86,88 @@ class IOSCompanionService:
             logger.warning(f"Error fetching album art from iTunes for {title}: {e}")
             return None
 
-    async def poll_bluetooth_media(self, hub, anim_engine=None):
-        """Polls BlueZ org.bluez.MediaPlayer1 via D-Bus."""
-        if not self._dbus_available:
-            return
-
+    async def _run_busctl(self, args: list) -> str:
+        """Executes a busctl system call."""
         try:
-            import dbus
-            manager = dbus.Interface(
-                self.bus.get_object("org.bluez", "/"),
-                "org.freedesktop.DBus.ObjectManager"
+            proc = await asyncio.create_subprocess_exec(
+                "busctl", "--system", *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-            objects = manager.GetManagedObjects()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3.0)
+            return stdout.decode("utf-8", errors="ignore").strip()
+        except Exception as e:
+            return ""
 
-            player_found = False
-            for path, interfaces in objects.items():
-                if "org.bluez.MediaPlayer1" in interfaces:
-                    player_found = True
-                    player = dbus.Interface(
-                        self.bus.get_object("org.bluez", path),
-                        "org.freedesktop.DBus.Properties"
-                    )
-                    status = str(player.Get("org.bluez.MediaPlayer1", "Status"))
-                    track = player.Get("org.bluez.MediaPlayer1", "Track")
-                    position = int(player.Get("org.bluez.MediaPlayer1", "Position")) if "Position" in interfaces["org.bluez.MediaPlayer1"] else 0
+    async def _find_player_path(self) -> Optional[str]:
+        """Finds any active BlueZ MediaPlayer1 object path (e.g. /org/bluez/hci0/dev_.../player0)."""
+        tree_out = await self._run_busctl(["tree", "org.bluez"])
+        for line in tree_out.splitlines():
+            if "/player" in line:
+                for part in line.strip().split():
+                    if part.startswith("/org/bluez") and "/player" in part:
+                        return part
+        return None
 
-                    title = str(track.get("Title", ""))
-                    artist = str(track.get("Artist", ""))
-                    album = str(track.get("Album", ""))
-                    duration = int(track.get("Duration", 0))
+    async def next_track(self):
+        """Sends Next track command to phone via BlueZ AVRCP."""
+        player_path = await self._find_player_path()
+        if player_path:
+            await self._run_busctl(["call", "org.bluez", player_path, "org.bluez.MediaPlayer1", "Next"])
+            logger.info(f"Sent Next command to {player_path}")
 
-                    is_playing = (status.lower() == "playing")
+    async def prev_track(self):
+        """Sends Previous track command to phone via BlueZ AVRCP."""
+        player_path = await self._find_player_path()
+        if player_path:
+            await self._run_busctl(["call", "org.bluez", player_path, "org.bluez.MediaPlayer1", "Previous"])
+            logger.info(f"Sent Previous command to {player_path}")
 
-                    track_changed = (title != self.current_title or artist != self.current_artist)
-                    self.current_title = title
-                    self.current_artist = artist
-                    self.current_album = album
-                    self.is_playing = is_playing
-                    self.duration_ms = duration
-                    self.progress_ms = position
-                    self.is_connected = True
+    async def toggle_play(self):
+        """Toggles Play/Pause on phone via BlueZ AVRCP."""
+        player_path = await self._find_player_path()
+        if player_path:
+            cmd = "Pause" if self.is_playing else "Play"
+            await self._run_busctl(["call", "org.bluez", player_path, "org.bluez.MediaPlayer1", cmd])
+            logger.info(f"Sent {cmd} command to {player_path}")
 
-                    # Broadcast track metadata to ESP32
+    async def _poll_python_dbus(self, hub):
+        """Internal poller using python-dbus if installed."""
+        import dbus
+        manager = dbus.Interface(
+            self.bus.get_object("org.bluez", "/"),
+            "org.freedesktop.DBus.ObjectManager"
+        )
+        objects = manager.GetManagedObjects()
+
+        player_found = False
+        for path, interfaces in objects.items():
+            if "org.bluez.MediaPlayer1" in interfaces:
+                player_found = True
+                player = dbus.Interface(
+                    self.bus.get_object("org.bluez", path),
+                    "org.freedesktop.DBus.Properties"
+                )
+                status = str(player.Get("org.bluez.MediaPlayer1", "Status"))
+                track = player.Get("org.bluez.MediaPlayer1", "Track")
+                position = int(player.Get("org.bluez.MediaPlayer1", "Position")) if "Position" in interfaces["org.bluez.MediaPlayer1"] else 0
+
+                title = str(track.get("Title", ""))
+                artist = str(track.get("Artist", ""))
+                album = str(track.get("Album", ""))
+                duration = int(track.get("Duration", 0))
+
+                is_playing = (status.lower() == "playing")
+                track_changed = (title != self.current_title or artist != self.current_artist)
+                self.current_title = title
+                self.current_artist = artist
+                self.current_album = album
+                self.is_playing = is_playing
+                self.duration_ms = duration
+                self.progress_ms = position
+                self.is_connected = True
+
+                if title:
                     await hub.send_json({
                         "cmd": "SPOTIFY",
                         "title": title[:32],
@@ -138,20 +178,86 @@ class IOSCompanionService:
                         "source": "ios"
                     })
 
-                    # If track changed, fetch official album artwork and stream to ESP32
-                    if track_changed and title:
-                        logger.info(f"iOS Track Changed: {title} by {artist}")
-                        art_bytes = await self.fetch_itunes_album_art(title, artist)
-                        if art_bytes:
-                            await hub.send_binary(art_bytes)
+                if track_changed and title:
+                    logger.info(f"iOS Track Changed: {title} by {artist}")
+                    art_bytes = await self.fetch_itunes_album_art(title, artist)
+                    if art_bytes:
+                        await hub.send_binary(art_bytes)
+                break
 
-                    break
+        if not player_found:
+            self.is_connected = False
 
-            if not player_found:
-                self.is_connected = False
+    async def _poll_busctl(self, hub):
+        """Fallback poller using systemd busctl CLI (works in any venv without python-dbus)."""
+        player_path = await self._find_player_path()
+        if not player_path:
+            self.is_connected = False
+            return
 
+        status_out = await self._run_busctl(["get-property", "org.bluez", player_path, "org.bluez.MediaPlayer1", "Status"])
+        is_playing = "playing" in status_out.lower()
+
+        pos_out = await self._run_busctl(["get-property", "org.bluez", player_path, "org.bluez.MediaPlayer1", "Position"])
+        position_ms = 0
+        try:
+            parts = pos_out.split()
+            if len(parts) >= 2:
+                position_ms = int(parts[1])
+        except Exception:
+            pass
+
+        track_out = await self._run_busctl(["get-property", "org.bluez", player_path, "org.bluez.MediaPlayer1", "Track"])
+        import re
+        title_m = re.search(r'"Title"\s+s\s+"([^"]+)"', track_out)
+        artist_m = re.search(r'"Artist"\s+s\s+"([^"]+)"', track_out)
+        album_m = re.search(r'"Album"\s+s\s+"([^"]+)"', track_out)
+        dur_m = re.search(r'"Duration"\s+u\s+(\d+)', track_out)
+
+        title = title_m.group(1) if title_m else ""
+        artist = artist_m.group(1) if artist_m else ""
+        album = album_m.group(1) if album_m else ""
+        duration_ms = int(dur_m.group(1)) if dur_m else 0
+
+        track_changed = (title != self.current_title or artist != self.current_artist)
+        self.current_title = title
+        self.current_artist = artist
+        self.current_album = album
+        self.is_playing = is_playing
+        self.duration_ms = duration_ms
+        self.progress_ms = position_ms
+        self.is_connected = True
+
+        if title:
+            await hub.send_json({
+                "cmd": "SPOTIFY",
+                "title": title[:32],
+                "artist": artist[:32],
+                "progress_ms": position_ms,
+                "duration_ms": duration_ms,
+                "playing": is_playing,
+                "source": "ios"
+            })
+
+        if track_changed and title:
+            logger.info(f"iOS Track Changed (via busctl): {title} by {artist}")
+            art_bytes = await self.fetch_itunes_album_art(title, artist)
+            if art_bytes:
+                await hub.send_binary(art_bytes)
+
+    async def poll_bluetooth_media(self, hub, anim_engine=None):
+        """Polls BlueZ org.bluez.MediaPlayer1 via Python dbus or busctl CLI fallback."""
+        if self._dbus_available:
+            try:
+                await self._poll_python_dbus(hub)
+                return
+            except Exception:
+                pass
+        # Fallback to busctl CLI
+        try:
+            await self._poll_busctl(hub)
         except Exception as e:
-            # Device not paired or player idle
+            logger.debug(f"busctl poll error: {e}")
             self.is_connected = False
 
     async def push_notification(self, app_name: str, title: str, message: str, hub):

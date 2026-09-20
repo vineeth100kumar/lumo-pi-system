@@ -371,21 +371,30 @@ async def set_emotion(item: EmotionSet):
     await emotion.push_schedule(hub, item.mood.upper())
     return {"ok": True}
 
-# Spotify Remote
+# Media Controls (iOS Bluetooth / Spotify)
 @app.post("/api/spotify/next")
 async def spotify_next():
+    if ios_companion.is_connected or getattr(bt_manager, "is_connected", False):
+        await ios_companion.next_track()
+        return {"ok": True, "source": "ios"}
     await spotify.skip_next(hub)
-    return {"ok": True}
+    return {"ok": True, "source": "spotify"}
 
 @app.post("/api/spotify/prev")
 async def spotify_prev():
+    if ios_companion.is_connected or getattr(bt_manager, "is_connected", False):
+        await ios_companion.prev_track()
+        return {"ok": True, "source": "ios"}
     await spotify.skip_prev(hub)
-    return {"ok": True}
+    return {"ok": True, "source": "spotify"}
 
 @app.post("/api/spotify/toggle")
 async def spotify_toggle():
+    if ios_companion.is_connected or getattr(bt_manager, "is_connected", False):
+        await ios_companion.toggle_play()
+        return {"ok": True, "source": "ios"}
     await spotify.toggle_play(hub)
-    return {"ok": True}
+    return {"ok": True, "source": "spotify"}
 
 if __name__ == "__main__":
     import uvicorn
