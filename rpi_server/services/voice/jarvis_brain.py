@@ -196,11 +196,35 @@ def build_system_prompt(services: Dict[str, Any]) -> str:
     # Tasks
     tasks = services.get("tasks")
     task_info = "None"
-    if tasks and hasattr(tasks, "get_all"):
+    if tasks:
         try:
-            all_tasks = tasks.get_all()
-            if all_tasks:
-                task_info = "; ".join(all_tasks[:5])
+            items = tasks.get_items() if hasattr(tasks, "get_items") else None
+            if items:
+                formatted_tasks = []
+                for t in items[:8]:
+                    title = (t.get("title") or "").strip()
+                    if not title:
+                        continue
+                    parts = [title]
+                    due = t.get("due_date") or t.get("start_at")
+                    if due:
+                        parts.append(f"due {due}")
+                    pri = t.get("priority")
+                    if pri and pri in ("urgent", "high"):
+                        parts.append(f"priority: {pri}")
+                    notes = (t.get("notes") or "").strip()
+                    if notes:
+                        clean_notes = " ".join(notes.split())
+                        if len(clean_notes) > 100:
+                            clean_notes = clean_notes[:97] + "..."
+                        parts.append(f"notes: '{clean_notes}'")
+                    formatted_tasks.append(" - ".join(parts))
+                if formatted_tasks:
+                    task_info = "; ".join(formatted_tasks)
+            elif hasattr(tasks, "get_all"):
+                all_tasks = tasks.get_all()
+                if all_tasks:
+                    task_info = "; ".join(all_tasks[:5])
         except Exception:
             pass
 

@@ -161,9 +161,9 @@ static void handleTextMessage(const String& payload) {
     JsonArray arr = doc["items"];
     s.task_count = 0;
     for (const char* item : arr) {
-      if (s.task_count < 5) {
-        strncpy(s.tasks[s.task_count], item, 47);
-        s.tasks[s.task_count][47] = '\0';
+      if (s.task_count < 5 && item) {
+        strncpy(s.tasks[s.task_count], item, sizeof(s.tasks[0]) - 1);
+        s.tasks[s.task_count][sizeof(s.tasks[0]) - 1] = '\0';
         s.task_count++;
       }
     }

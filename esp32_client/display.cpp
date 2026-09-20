@@ -411,38 +411,122 @@ static void drawTasksScreen(const LumoState& s) {
   tft.setFont(NULL);
   tft.fillScreen(COLOR_BG_BLACK);
 
+  // Header
   tft.setTextSize(2);
   tft.setTextColor(COLOR_WHITE);
   tft.setCursor(12, 10);
-  tft.print("Tasks");
-  tft.drawFastHLine(10, 32, 300, tft.color565(50, 50, 60));
-
-  int y = 48;
-  for (int i = 0; i < s.task_count && i < 5; i++) {
-    tft.setTextSize(2);
-    tft.setTextColor(COLOR_ACCENT);
-    tft.setCursor(12, y);
-    tft.print("> ");
-
-    tft.setTextColor(COLOR_WHITE);
-    char cut[22];
-    strncpy(cut, s.tasks[i], 21);
-    cut[21] = '\0';
-    tft.print(cut);
-
-    y += 28;
+  if (s.task_count > 0) {
+    char hdr[24];
+    snprintf(hdr, sizeof(hdr), "Tasks (%d)", s.task_count);
+    tft.print(hdr);
+  } else {
+    tft.print("Tasks");
   }
+
+  // Date indicator on the right of header if available
+  if (s.date[0] != '\0') {
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_MUTED);
+    tft.setCursor(215, 14);
+    tft.print(s.date);
+  }
+
+  tft.drawFastHLine(10, 30, 300, tft.color565(50, 50, 60));
 
   if (s.task_count == 0) {
     tft.setTextSize(2);
     tft.setTextColor(COLOR_MUTED);
-    tft.setCursor(40, 90);
+    tft.setCursor(55, 100);
     tft.print("All tasks done!");
+  } else {
+    int y = 44;
+    int drawn = 0;
+    const int maxCharsPerLine = 44; // At textSize 1, 44 chars * 6px = 264px (fits comfortably in 320-30=290px)
+
+    for (int i = 0; i < s.task_count && i < 5; i++) {
+      if (y > 195) break;
+
+      // Draw bullet indicator
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_ACCENT);
+      tft.setCursor(12, y);
+      tft.print(">");
+
+      // Split task into up to 2 lines cleanly
+      const char* taskStr = s.tasks[i];
+      int len = (int)strlen(taskStr);
+
+      char line1[48];
+      char line2[48];
+      line1[0] = '\0';
+      line2[0] = '\0';
+
+      if (len <= maxCharsPerLine) {
+        strncpy(line1, taskStr, sizeof(line1) - 1);
+        line1[sizeof(line1) - 1] = '\0';
+      } else {
+        // Find last space before or at maxCharsPerLine
+        int splitIdx = maxCharsPerLine;
+        while (splitIdx > 15 && taskStr[splitIdx] != ' ') {
+          splitIdx--;
+        }
+        if (taskStr[splitIdx] != ' ') {
+          splitIdx = maxCharsPerLine; // Fallback hard break if no space found
+        }
+
+        int copyLen = splitIdx;
+        if (copyLen > (int)sizeof(line1) - 1) copyLen = sizeof(line1) - 1;
+        strncpy(line1, taskStr, copyLen);
+        line1[copyLen] = '\0';
+
+        // Skip spaces for line 2
+        int start2 = splitIdx;
+        while (taskStr[start2] == ' ' && start2 < len) start2++;
+
+        if (start2 < len) {
+          int remLen = len - start2;
+          if (remLen > maxCharsPerLine) {
+            strncpy(line2, taskStr + start2, maxCharsPerLine - 3);
+            line2[maxCharsPerLine - 3] = '\0';
+            strcat(line2, "...");
+          } else {
+            strncpy(line2, taskStr + start2, sizeof(line2) - 1);
+            line2[sizeof(line2) - 1] = '\0';
+          }
+        }
+      }
+
+      // Render Line 1 (primary title in bright white)
+      tft.setTextColor(COLOR_WHITE);
+      tft.setCursor(24, y);
+      tft.print(line1);
+
+      // Render Line 2 if present (secondary continuation in muted silver)
+      if (line2[0] != '\0') {
+        y += 11;
+        tft.setTextColor(tft.color565(170, 180, 195));
+        tft.setCursor(24, y);
+        tft.print(line2);
+      }
+
+      y += 18;
+      drawn++;
+    }
+
+    // If more tasks remain that could not fit
+    if (s.task_count > drawn && y <= 208) {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_MUTED);
+      tft.setCursor(24, y);
+      char overflow[32];
+      snprintf(overflow, sizeof(overflow), "+ %d more on dashboard", s.task_count - drawn);
+      tft.print(overflow);
+    }
   }
 
   tft.setTextSize(1);
   tft.setTextColor(COLOR_MUTED);
-  tft.setCursor(65, 218);
+  tft.setCursor(65, 226);
   tft.print("Controlled via Web Dashboard");
 }
 

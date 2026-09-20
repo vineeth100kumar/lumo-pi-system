@@ -64,7 +64,7 @@ struct LumoState {
   NeoMode  neo_mode       = NEO_WARM;
   uint8_t  neo_brightness = 40;
   uint16_t neo_hue        = 0;
-  char    tasks[5][48];
+  char    tasks[5][96];
   uint8_t task_count = 0;
   bool    alarm_ringing = false;
   uint8_t alarm_h = 7, alarm_m = 0;

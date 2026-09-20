@@ -85,11 +85,35 @@ class TaskService:
     async def push_to_esp32(self, hub):
         if not hub.connected:
             return
+
+        formatted = []
+        for item in self.items[:5]:
+            title = (item.get("title") or "Untitled").strip()
+            due = item.get("due_date") or item.get("start_at") or ""
+            due_tag = ""
+            if due:
+                if "T" in due:
+                    time_part = due.split("T")[1][:5]
+                    due_tag = f" [{time_part}]"
+                elif " " in due:
+                    parts = due.split(" ")
+                    if len(parts) > 1 and ":" in parts[1]:
+                        due_tag = f" [{parts[1][:5]}]"
+
+            full = f"{title}{due_tag}"
+            if len(full) > 95:
+                if due_tag:
+                    avail = 95 - len(due_tag) - 3
+                    full = f"{title[:avail]}...{due_tag}"
+                else:
+                    full = title[:92] + "..."
+            formatted.append(full)
+
         await hub.send_json({
             "cmd": "SHOW_TASKS",
-            "items": self.get_tasks()[:5]
+            "items": formatted
         })
-        logger.info("Pushed top 5 tasks to ESP32")
+        logger.info(f"Pushed {len(formatted)} tasks to ESP32")
 
     def is_alarm(self, item: dict) -> bool:
         tags = (item.get("context_tags") or "").lower()

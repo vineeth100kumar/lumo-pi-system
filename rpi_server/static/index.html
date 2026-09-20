@@ -122,6 +122,67 @@
       padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
     }
     .list-item:last-child { border-bottom: none; }
+
+    /* Optimized Task Item Rows for Long Information */
+    .task-item-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .task-item-row:last-child { border-bottom: none; }
+    .task-item-content {
+      flex: 1; min-width: 0; word-break: break-word; overflow-wrap: break-word;
+    }
+    .task-item-title {
+      font-size: 0.95rem; font-weight: 600; color: #fff; line-height: 1.4;
+      word-break: break-word; overflow-wrap: break-word;
+    }
+    .task-item-notes {
+      font-size: 0.82rem; color: var(--muted); margin-top: 6px; line-height: 1.45;
+      word-break: break-word; overflow-wrap: break-word; white-space: pre-wrap;
+      background: rgba(0, 0, 0, 0.25); padding: 8px 12px; border-radius: 8px;
+      border-left: 2px solid rgba(0, 229, 255, 0.4); max-height: 200px; overflow-y: auto;
+    }
+    .task-badges {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px;
+    }
+    .task-badge {
+      display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+      border-radius: 6px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.2px;
+    }
+    .badge-due {
+      background: rgba(10, 132, 255, 0.15); color: #5ac8fa;
+      border: 1px solid rgba(10, 132, 255, 0.25);
+    }
+    .badge-overdue {
+      background: rgba(255, 69, 58, 0.18); color: #ff453a;
+      border: 1px solid rgba(255, 69, 58, 0.3);
+    }
+    .badge-urgent {
+      background: rgba(255, 69, 58, 0.2); color: #ff453a;
+      border: 1px solid rgba(255, 69, 58, 0.4);
+    }
+    .badge-high {
+      background: rgba(255, 159, 10, 0.2); color: #ff9f0a;
+      border: 1px solid rgba(255, 159, 10, 0.35);
+    }
+    .badge-low {
+      background: rgba(255, 255, 255, 0.08); color: var(--muted);
+    }
+    .badge-tag {
+      background: rgba(255, 255, 255, 0.06); color: #8e8e93;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .task-item-actions {
+      flex-shrink: 0; display: flex; align-items: center; margin-top: 1px;
+    }
+    .task-del-btn {
+      background: rgba(255, 69, 58, 0.08); border: 1px solid rgba(255, 69, 58, 0.2);
+      color: var(--red); padding: 5px 9px; font-size: 0.8rem; border-radius: 8px;
+      cursor: pointer; transition: all 0.15s ease;
+    }
+    .task-del-btn:hover {
+      background: rgba(255, 69, 58, 0.25); color: #fff;
+    }
     .item-left { display: flex; flex-direction: column; gap: 2px; }
     .item-time { font-size: 1.2rem; font-weight: 600; }
     .item-label { font-size: 0.8rem; color: var(--muted); }
@@ -594,11 +655,14 @@
 
   <!-- 6. Tasks List -->
   <div class="card">
-    <div class="card-title">Tasks (Synced to Display)</div>
+    <div class="card-title">
+      <span>Tasks (Synced with Sage OS)</span>
+      <span id="taskCountBadge" class="badge" style="font-size:0.75rem; background:rgba(0,229,255,0.12); color:var(--accent);">0 Open</span>
+    </div>
     <div id="taskList"></div>
 
     <div class="add-row">
-      <input type="text" id="newTaskText" placeholder="Enter new task...">
+      <input type="text" id="newTaskText" placeholder="Enter task (e.g. Finish report tomorrow at 5pm #work)..." onkeydown="if(event.key==='Enter') addTask()">
       <button onclick="addTask()" class="primary">Add</button>
     </div>
   </div>
@@ -1313,25 +1377,110 @@
     } catch(e) {}
   }
 
+  function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function formatDueDate(dueStr) {
+    if (!dueStr) return "";
+    try {
+      const d = new Date(dueStr);
+      if (isNaN(d.getTime())) {
+        return `<span class="task-badge badge-due">📅 ${escapeHtml(dueStr)}</span>`;
+      }
+      const now = new Date();
+      const isToday = d.toDateString() === now.toDateString();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      const isTomorrow = d.toDateString() === tomorrow.toDateString();
+      const isPast = d < now && !isToday;
+
+      const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const hasTime = dueStr.includes("T") || dueStr.includes(":");
+
+      let label = "";
+      if (isToday) {
+        label = hasTime ? `Today, ${timeStr}` : `Today`;
+      } else if (isTomorrow) {
+        label = hasTime ? `Tomorrow, ${timeStr}` : `Tomorrow`;
+      } else {
+        const datePart = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        label = hasTime ? `${datePart}, ${timeStr}` : datePart;
+      }
+
+      const cls = isPast ? "badge-overdue" : "badge-due";
+      const icon = isPast ? "⚠️" : "📅";
+      return `<span class="task-badge ${cls}">${icon} ${label}</span>`;
+    } catch (e) {
+      return `<span class="task-badge badge-due">📅 ${escapeHtml(dueStr)}</span>`;
+    }
+  }
+
+  function formatPriority(p) {
+    if (!p) return "";
+    const lp = String(p).toLowerCase();
+    if (lp === "urgent") {
+      return `<span class="task-badge badge-urgent">🔴 Urgent</span>`;
+    } else if (lp === "high") {
+      return `<span class="task-badge badge-high">🟠 High</span>`;
+    } else if (lp === "low") {
+      return `<span class="task-badge badge-low">Low</span>`;
+    }
+    return "";
+  }
+
+  function formatTags(tags) {
+    if (!tags) return "";
+    let tagList = [];
+    if (Array.isArray(tags)) tagList = tags;
+    else if (typeof tags === "string") tagList = tags.split(",").map(s => s.trim()).filter(Boolean);
+
+    return tagList.map(tag => `<span class="task-badge badge-tag">#${escapeHtml(tag)}</span>`).join(" ");
+  }
+
   async function fetchTasks() {
     try {
       const res = await fetch("/api/tasks");
       const data = await res.json();
       window.cachedTasks = data.tasks || [];
       const items = data.items || [];
+      window.cachedTaskItems = items;
+      
+      const badge = document.getElementById("taskCountBadge");
+      if (badge) badge.textContent = `${items.length} Open`;
+
       const list = document.getElementById("taskList");
       list.innerHTML = "";
 
       items.forEach(t => {
         const item = document.createElement("div");
-        item.className = "list-item";
-        const due = t.due_date ? ` <span style="opacity:0.55; font-size:0.8rem;">${t.due_date}</span>` : "";
+        item.className = "task-item-row";
+
+        const dueHtml = formatDueDate(t.due_date || t.start_at);
+        const priorityHtml = formatPriority(t.priority);
+        const tagsHtml = formatTags(t.context_tags);
+        const notesHtml = t.notes ? `<div class="task-item-notes">${escapeHtml(t.notes)}</div>` : "";
+
         item.innerHTML = `
-          <div style="display:flex; align-items:center; gap:10px;">
-            <input type="checkbox" onclick="completeTask('${t.id}')" style="width:18px; height:18px; cursor:pointer;">
-            <span>${t.title}${due}</span>
+          <input type="checkbox" onclick="completeTask('${t.id}')" title="Mark completed" style="width:19px; height:19px; margin-top:2px; flex-shrink:0; cursor:pointer; accent-color:var(--green);">
+          <div class="task-item-content">
+            <div class="task-item-title">${escapeHtml(t.title || 'Untitled')}</div>
+            ${notesHtml}
+            <div class="task-badges">
+              ${dueHtml}
+              ${priorityHtml}
+              ${tagsHtml}
+            </div>
           </div>
-          <button onclick="deleteTask('${t.id}')" style="padding:4px 8px; font-size:0.8rem;">Del</button>
+          <div class="task-item-actions">
+            <button onclick="deleteTask('${t.id}')" class="task-del-btn" title="Delete task">✕</button>
+          </div>
         `;
         list.appendChild(item);
       });
@@ -1744,28 +1893,95 @@
     }
     else if (scr === "TASKS") {
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 16px sans-serif";
+      ctx.font = "bold 15px sans-serif";
       ctx.textAlign = "left";
       ctx.fillText("Tasks", 14, 22);
-      ctx.strokeStyle = "#282c37";
-      ctx.beginPath(); ctx.moveTo(10, 32); ctx.lineTo(310, 32); ctx.stroke();
 
       const taskList = window.cachedTasks || [];
+      const taskItems = window.cachedTaskItems || [];
+
+      // Open task count indicator
+      ctx.fillStyle = "#00E5FF";
+      ctx.font = "11px monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(`${taskList.length} open`, 306, 22);
+
+      ctx.strokeStyle = "#282c37";
+      ctx.beginPath(); ctx.moveTo(10, 30); ctx.lineTo(310, 30); ctx.stroke();
+
       if (!taskList.length) {
         ctx.fillStyle = "#4a5568";
         ctx.font = "12px sans-serif";
-        ctx.fillText(sageEmptyReason("tasks").substring(0, 34), 14, 62);
-      }
-      taskList.slice(0, 5).forEach((t, i) => {
-        const y = 62 + i * 28;
-        ctx.fillStyle = "#00E5FF";
-        ctx.font = "bold 14px sans-serif";
-        ctx.fillText(">", 14, y);
+        ctx.textAlign = "left";
+        ctx.fillText(sageEmptyReason("tasks").substring(0, 38), 14, 62);
+      } else {
+        let currentY = 50;
+        const maxTasks = 4;
 
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "13px sans-serif";
-        ctx.fillText(t.substring(0, 22), 32, y);
-      });
+        for (let i = 0; i < Math.min(taskList.length, maxTasks); i++) {
+          if (currentY > 195) break;
+
+          const itemData = taskItems[i] || {};
+          const fullText = taskList[i] || "";
+
+          // Bullet
+          ctx.fillStyle = "#00E5FF";
+          ctx.font = "bold 13px monospace";
+          ctx.textAlign = "left";
+          ctx.fillText(">", 12, currentY);
+
+          // Word-wrapped text for Line 1 and Line 2
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "12px sans-serif";
+
+          const words = fullText.split(" ");
+          let line1 = "", line2 = "";
+          for (let w = 0; w < words.length; w++) {
+            const testLine = line1 ? line1 + " " + words[w] : words[w];
+            if (ctx.measureText(testLine).width < 235) {
+              line1 = testLine;
+            } else {
+              line2 = words.slice(w).join(" ");
+              break;
+            }
+          }
+
+          if (line2) {
+            if (ctx.measureText(line2).width > 235) {
+              while (line2.length > 0 && ctx.measureText(line2 + "...").width > 235) {
+                line2 = line2.slice(0, -1);
+              }
+              line2 += "...";
+            }
+          }
+
+          ctx.fillText(line1, 26, currentY);
+
+          if (line2) {
+            currentY += 16;
+            ctx.fillStyle = "#8892b0";
+            ctx.font = "11px sans-serif";
+            ctx.fillText(line2, 26, currentY);
+          }
+
+          // Due timestamp if present
+          if (itemData.due_date && currentY < 185) {
+            let dueStr = itemData.due_date;
+            if (dueStr.includes("T")) dueStr = dueStr.split("T")[1].substring(0, 5);
+            ctx.fillStyle = "#ff9f0a";
+            ctx.font = "10px monospace";
+            ctx.fillText(`📅 ${dueStr}`, 26, currentY + 13);
+            currentY += 13;
+          }
+
+          currentY += 22;
+        }
+
+        ctx.fillStyle = "#3a4154";
+        ctx.font = "10px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Controlled via Web • Synced with Sage", 160, 226);
+      }
     }
     else if (scr === "ALARM") {
       const flash = Math.floor(now / 500) % 2 === 0;
