@@ -102,7 +102,7 @@ class MemoriesService:
                 except Exception: pass
             return None
 
-    async def ingest_bytes(self, raw: bytes, hub=None, source: str = "upload", filename: str = "", caption: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    async def ingest_bytes(self, raw: bytes, hub=None, source: str = "upload", filename: str = "", caption: Optional[str] = None, notify: bool = True) -> Optional[Dict[str, Any]]:
         """Shared processing core for Bluetooth OBEX, Web Upload, and iOS Shortcuts."""
         if not raw:
             return None
@@ -167,8 +167,8 @@ class MemoriesService:
             self._save_index()
             logger.info(f"Successfully ingested memory '{photo_id}' ({caption}) from {source}")
 
-            # Notify LUMO companion if connected
-            if hub and hub.connected:
+            # Notify LUMO companion if connected and notify is enabled
+            if notify and hub and hub.connected:
                 await hub.send_json({
                     "cmd": "NOTIF",
                     "app": "Memories",

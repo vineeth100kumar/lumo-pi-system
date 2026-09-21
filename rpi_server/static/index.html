@@ -1032,15 +1032,17 @@
     </div>
 
     <!-- Modal Tabs -->
+    <!-- Modal Tabs -->
     <div class="modal-tab-bar">
-      <button class="modal-tab-btn active" id="tabBtnShare" onclick="switchShortcutTab('share')">⚡ 1-Tap Share Sheet</button>
-      <button class="modal-tab-btn" id="tabBtnAuto" onclick="switchShortcutTab('auto')">🌙 Nightly Routine</button>
+      <button class="modal-tab-btn active" id="tabBtnShare" onclick="switchShortcutTab('share')">⚡ Multi-Photo Share Sheet</button>
+      <button class="modal-tab-btn" id="tabBtnAuto" onclick="switchShortcutTab('auto')">🌙 Nightly Batch Sync</button>
+      <button class="modal-tab-btn" id="tabBtnSelect" onclick="switchShortcutTab('select')">🖼️ Multi-Photo Picker</button>
       <button class="modal-tab-btn" id="tabBtnCurl" onclick="switchShortcutTab('curl')">🧪 cURL / API</button>
     </div>
 
-    <!-- Tab 1: Share Sheet -->
+    <!-- Tab 1: Multi-Photo Share Sheet -->
     <div id="shortcutTabShare" style="font-size:0.8rem; line-height:1.55;">
-      <div style="margin-bottom:10px; color:#ddd;">Configure an iPhone Share Sheet action to send any photo to LUMO in 1 tap:</div>
+      <div style="margin-bottom:10px; color:#ddd;">Send <b>one or multiple photos</b> at once from the iOS Photos app via Share Sheet:</div>
       <div style="display:flex; flex-direction:column; gap:10px;">
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">1</div>
@@ -1052,11 +1054,15 @@
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">3</div>
-          <div>Add Action: <b>Convert Image</b> &gt; Set input to <i>Shortcut Input</i> and format to <b>JPEG</b>.</div>
+          <div>Add Action: <b>Repeat with Each</b> &gt; Input: <i>Shortcut Input</i>.</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">4</div>
-          <div>Add Action: <b>Get Contents of URL</b>:
+          <div>Inside loop, Add Action: <b>Convert Image</b> &gt; input <i>Repeat Item</i> to <b>JPEG</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">5</div>
+          <div>Inside loop, Add Action: <b>Get Contents of URL</b>:
             <ul style="margin:4px 0 0 16px; color:var(--muted); font-size:0.76rem;">
               <li>URL: <span style="color:#00e5ff;">Paste the copied URL above</span></li>
               <li>Method: <b>POST</b></li>
@@ -1065,18 +1071,18 @@
           </div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
-          <div class="step-badge">5</div>
-          <div>(Optional) Add Action: <b>Show Notification</b> &gt; <i>"✨ Sent to LUMO Frame!"</i></div>
+          <div class="step-badge">6</div>
+          <div>Outside loop, Add Action: <b>Show Notification</b> &gt; <i>"✨ Synced photos to LUMO Frame!"</i></div>
         </div>
       </div>
       <div style="background:rgba(48,209,88,0.1); border:1px solid rgba(48,209,88,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85e89d;">
-        🎉 <b>Ready!</b> Open any photo in the Photos app &gt; Tap <i>Share</i> &gt; Tap <i>Send to LUMO</i>. The photo will instantly appear on your desk!
+        🎉 <b>Multiple photos supported!</b> In the Photos app, tap <b>Select</b>, pick 1, 5, or 20 photos, tap <b>Share</b> &gt; <b>Send to LUMO</b>. They will all beam to LUMO in batch!
       </div>
     </div>
 
-    <!-- Tab 2: Nightly Routine -->
+    <!-- Tab 2: Autonomous Nightly Batch Sync -->
     <div id="shortcutTabAuto" style="display:none; font-size:0.8rem; line-height:1.55;">
-      <div style="margin-bottom:10px; color:#ddd;">Automatically sync today's favorite photo when placing iPhone on charger:</div>
+      <div style="margin-bottom:10px; color:#ddd;">Automatically sync <b>ALL favorite photos taken today</b> every night when charging:</div>
       <div style="display:flex; flex-direction:column; gap:10px;">
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">1</div>
@@ -1088,28 +1094,67 @@
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">3</div>
-          <div>Add Action: <b>Find Photos</b> &gt; Filter where <i>Is a Favorite is Yes</i> &amp; <i>Date Taken is Today</i>.</div>
+          <div>Add Action: <b>Find Photos</b> &gt; Filter where <i>Is a Favorite is Yes</i> &amp; <i>Date Taken is Today</i> (or <i>in the last 1 day</i>).</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">4</div>
-          <div>Add Action: <b>Get Item from List</b> (First Item) &gt; <b>Convert Image</b> to JPEG.</div>
+          <div>Add Action: <b>Repeat with Each</b> &gt; Input: <i>Photos</i>.</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">5</div>
-          <div>Add Action: <b>Get Contents of URL</b> &gt; POST to the shortcut URL above.</div>
+          <div>Inside loop, Add Action: <b>Convert Image</b> &gt; input <i>Repeat Item</i> to <b>JPEG</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">6</div>
+          <div>Inside loop, Add Action: <b>Get Contents of URL</b> &gt; POST to shortcut URL above (Request Body: File &gt; Converted Image).</div>
         </div>
       </div>
       <div style="background:rgba(10,132,255,0.1); border:1px solid rgba(10,132,255,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85d7ff;">
-        🌙 <b>Autonomous Desk Frame:</b> Every night when your phone docks to charge, LUMO will update with your favorite moment from the day!
+        🌙 <b>Zero-Click Multi-Photo Sync:</b> When you dock your phone at night, every single favorite photo from your day is automatically synced to your desk frame!
       </div>
     </div>
 
-    <!-- Tab 3: cURL / API -->
+    <!-- Tab 3: Dedicated Multi-Photo Picker Shortcut -->
+    <div id="shortcutTabSelect" style="display:none; font-size:0.8rem; line-height:1.55;">
+      <div style="margin-bottom:10px; color:#ddd;">A standalone 1-tap Home Screen button to select multiple photos and send immediately:</div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">1</div>
+          <div>Open <b>Shortcuts</b> app &gt; Tap <b>+</b> &gt; Name it <b>Beam Photos to LUMO</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">2</div>
+          <div>Add Action: <b>Select Photos</b> &gt; Tap the arrow (<b>&gt;</b>) &gt; Turn ON <b>Select Multiple</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">3</div>
+          <div>Add Action: <b>Repeat with Each</b> &gt; Input: <i>Photos</i>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">4</div>
+          <div>Inside loop: <b>Convert Image</b> (Repeat Item to JPEG) &gt; <b>Get Contents of URL</b> (POST File).</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">5</div>
+          <div>Tap the share icon at bottom &gt; <b>Add to Home Screen</b> (or assign to Action Button).</div>
+        </div>
+      </div>
+      <div style="background:rgba(255,159,10,0.1); border:1px solid rgba(255,159,10,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#ffb300;">
+        📲 <b>Home Screen Widget:</b> Tap the icon anytime, pick 10 photos from your gallery, and they will all stream to LUMO!
+      </div>
+    </div>
+
+    <!-- Tab 4: cURL / Batch API -->
     <div id="shortcutTabCurl" style="display:none; font-size:0.8rem; line-height:1.55;">
-      <div style="margin-bottom:8px; color:#ddd;">Direct cURL or programmatic upload:</div>
-      <div class="code-pill" style="margin-bottom:10px;">
-        <span id="curlExampleText">curl -k -X POST -F "file=@photo.jpg" https://.../api/memories/shortcut</span>
+      <div style="margin-bottom:8px; color:#ddd;">Single or batch multi-photo upload via cURL:</div>
+      <div style="font-size:0.72rem; color:var(--muted); margin-bottom:4px;">Single Photo:</div>
+      <div class="code-pill" style="margin-bottom:8px;">
+        <span id="curlExampleText">curl -X POST -F "file=@photo.jpg" http://...:8081/api/memories/shortcut</span>
         <button onclick="copyCurlExample()" id="btnCopyCurl" style="padding:4px 8px; font-size:0.72rem; background:var(--accent); border:none; border-radius:6px; color:#fff; cursor:pointer;">Copy</button>
+      </div>
+      <div style="font-size:0.72rem; color:var(--muted); margin-bottom:4px;">Multiple Photos in 1 Batch:</div>
+      <div class="code-pill" style="margin-bottom:10px;">
+        <span>curl -X POST -F "files=@pic1.jpg" -F "files=@pic2.jpg" -F "files=@pic3.jpg" http://...:8081/api/memories/shortcut</span>
       </div>
       <button onclick="testShortcutEndpoint()" class="primary" style="width:100%; padding:9px; font-size:0.8rem; margin-top:6px;">🧪 Run Test Upload via Browser</button>
       <div id="testUploadResult" style="margin-top:8px; font-size:0.75rem; color:var(--muted); display:none;"></div>
@@ -2214,18 +2259,29 @@
     document.body.appendChild(toast);
 
     let successCount = 0;
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    try {
       const fd = new FormData();
-      fd.append("file", file);
+      for (let i = 0; i < files.length; i++) {
+        fd.append("files", files[i]);
+      }
       if (customCaption) fd.append("caption", customCaption);
 
-      try {
-        const res = await fetch("/api/memories/upload", { method: "POST", body: fd });
-        const data = await res.json();
-        if (data.ok) successCount++;
-      } catch (err) {
-        console.error("Upload error:", err);
+      const res = await fetch("/api/memories/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.ok) {
+        successCount = data.count || files.length;
+      }
+    } catch (err) {
+      console.error("Batch upload error, falling back to sequential:", err);
+      for (let i = 0; i < files.length; i++) {
+        try {
+          const sfd = new FormData();
+          sfd.append("file", files[i]);
+          if (customCaption) sfd.append("caption", customCaption);
+          const sres = await fetch("/api/memories/upload", { method: "POST", body: sfd });
+          const sdata = await sres.json();
+          if (sdata.ok) successCount++;
+        } catch (e) {}
       }
     }
 
@@ -2401,7 +2457,7 @@
   }
 
   function switchShortcutTab(tab) {
-    const tabs = ["share", "auto", "curl"];
+    const tabs = ["share", "auto", "select", "curl"];
     tabs.forEach(t => {
       const btn = document.getElementById("tabBtn" + t.charAt(0).toUpperCase() + t.slice(1));
       const pane = document.getElementById("shortcutTab" + t.charAt(0).toUpperCase() + t.slice(1));

@@ -709,50 +709,86 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
         should_display = display_param.lower() in ("true", "1", "yes")
 
     source = request.query_params.get("source") or default_source
-    raw_bytes = None
-    filename = "upload.jpg"
+    saved_items = []
 
     content_type = request.headers.get("content-type", "")
 
     if "multipart/form-data" in content_type:
         form = await request.form()
-        file_obj = form.get("file") or form.get("photo") or form.get("image")
-        if isinstance(file_obj, UploadFile):
-            raw_bytes = await file_obj.read()
-            filename = file_obj.filename or filename
         if "caption" in form and form["caption"]:
             caption = str(form["caption"])
         if "display" in form and form["display"]:
             should_display = str(form["display"]).lower() in ("true", "1", "yes")
+
+        # Collect all UploadFile objects from any field names (file, files, photo, image, etc.)
+        files_to_process = []
+        for key, val in form.multi_items():
+            if isinstance(val, UploadFile):
+                files_to_process.append(val)
+
+        is_batch = len(files_to_process) > 1
+
+        for file_obj in files_to_process:
+            raw_bytes = await file_obj.read()
+            if not raw_bytes or len(raw_bytes) < 50:
+                continue
+            fname = file_obj.filename or "upload.jpg"
+            # For batch uploads, suppress individual per-image haptic/notif to avoid buzzing 10 times
+            item = await memories.ingest_bytes(
+                raw_bytes,
+                hub=hub,
+                source=source,
+                filename=fname,
+                caption=caption,
+                notify=not is_batch
+            )
+            if item:
+                saved_items.append(item)
+
+        # Notify once for entire batch
+        if is_batch and saved_items and hub and hub.connected:
+            await hub.send_json({
+                "cmd": "NOTIF",
+                "app": "Memories",
+                "title": "Memories Synced!",
+                "body": f"{len(saved_items)} photos added"
+            })
+            await hub.send_json({"cmd": "HAPTIC", "ms": 80})
+
     else:
         # Direct raw binary body (e.g. Apple Shortcuts "Request Body: File" or cURL --data-binary)
         raw_bytes = await request.body()
-        filename = request.headers.get("x-filename") or "shortcut.jpg"
+        if raw_bytes and len(raw_bytes) > 50:
+            fname = request.headers.get("x-filename") or "shortcut.jpg"
+            item = await memories.ingest_bytes(
+                raw_bytes,
+                hub=hub,
+                source=source,
+                filename=fname,
+                caption=caption,
+                notify=True
+            )
+            if item:
+                saved_items.append(item)
 
-    if not raw_bytes:
-        raise HTTPException(status_code=400, detail="No image file or image data received")
+    if not saved_items:
+        raise HTTPException(status_code=400, detail="No valid images received or image decoding failed")
 
-    item = await memories.ingest_bytes(
-        raw_bytes,
-        hub=hub,
-        source=source,
-        filename=filename,
-        caption=caption
-    )
-    if not item:
-        raise HTTPException(status_code=400, detail="Invalid image file or image decoding failed")
-
+    # If display was requested, push latest photo to ESP32 display
     if should_display or current_screen == "MEMORY":
         if current_screen != "MEMORY":
             await set_screen_mode("MEMORY")
         else:
             await memories.push_current(hub)
 
+    count = len(saved_items)
     return {
         "ok": True,
         "status": "success",
-        "message": f"Memory '{item['caption']}' saved to LUMO!",
-        "photo": item,
+        "count": count,
+        "message": f"Saved {count} photo{'s' if count > 1 else ''} to LUMO!",
+        "photos": saved_items,
+        "photo": saved_items[0],
         "displayed": should_display or current_screen == "MEMORY"
     }
 
