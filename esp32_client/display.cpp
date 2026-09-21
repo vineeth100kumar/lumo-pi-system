@@ -55,20 +55,24 @@ void onNewArt(const uint8_t* data, size_t len) {
 }
 
 static char lastMemoryCaption[28] = "";
+static uint16_t stripBuf[320 * 20]; // 12.8 KB static aligned buffer
 
 void onNewMemoryStrip(const uint8_t* data, size_t len) {
-  if (len < 7) return;
+  if (len < 8) return;
   if (data[0] != 0xAA || data[1] != 0xCC) return;
 
-  uint16_t y_off = data[2] | ((uint16_t)data[3] << 8);
-  uint8_t  strip_h = data[4];
-  uint16_t strip_w = data[5] | ((uint16_t)data[6] << 8);
+  uint16_t y_off   = data[2] | ((uint16_t)data[3] << 8);
+  uint16_t strip_h = data[4] | ((uint16_t)data[5] << 8);
+  uint16_t strip_w = data[6] | ((uint16_t)data[7] << 8);
 
   size_t expected_pixels = (size_t)strip_w * strip_h;
-  if (len < 7 + expected_pixels * 2) return;
+  if (expected_pixels > 320 * 20 || len < 8 + expected_pixels * 2) return;
+
+  // Safe aligned copy into SRAM buffer (fixes byte-alignment shift and prevents color distortion)
+  memcpy(stripBuf, data + 8, expected_pixels * 2);
 
   // Stream directly into display hardware
-  tft.drawRGBBitmap(0, y_off, (uint16_t*)(data + 7), strip_w, strip_h);
+  tft.drawRGBBitmap(0, y_off, stripBuf, strip_w, strip_h);
 
   // If this strip reaches the bottom, re-draw caption overlay if present
   if (y_off + strip_h >= 240 && lastMemoryCaption[0] != '\0') {

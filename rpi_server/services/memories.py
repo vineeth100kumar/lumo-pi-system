@@ -252,17 +252,18 @@ class MemoriesService:
 
             for i in range(total_strips):
                 y_off = i * strip_h
-                frame = bytearray(7 + strip_w * strip_h * 2)
+                frame = bytearray(8 + strip_w * strip_h * 2)
 
                 frame[0] = 0xAA
                 frame[1] = 0xCC # Frame type: MEMORY_STRIP
                 frame[2] = y_off & 0xFF
                 frame[3] = (y_off >> 8) & 0xFF
-                frame[4] = strip_h
-                frame[5] = strip_w & 0xFF
-                frame[6] = (strip_w >> 8) & 0xFF
+                frame[4] = strip_h & 0xFF
+                frame[5] = (strip_h >> 8) & 0xFF
+                frame[6] = strip_w & 0xFF
+                frame[7] = (strip_w >> 8) & 0xFF
 
-                idx = 7
+                idx = 8
                 for y in range(y_off, y_off + strip_h):
                     for x in range(strip_w):
                         r, g, b = img.getpixel((x, y))
