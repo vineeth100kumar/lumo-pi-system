@@ -1030,6 +1030,16 @@
           <option value="300">5 minutes</option>
         </select>
       </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem; color:var(--muted); margin-bottom:10px;">
+        <span>GIF Repeat Playback:</span>
+        <select id="memGifLoopsSelect" onchange="changeMemGifLoops(this.value)" style="background:rgba(255,255,255,0.08); border:1px solid var(--card-border); color:#fff; border-radius:8px; padding:4px 8px; font-size:0.75rem; outline:none;">
+          <option value="1">1 loop</option>
+          <option value="2">2 loops</option>
+          <option value="3" selected>3 loops (Default)</option>
+          <option value="5">5 loops</option>
+          <option value="10">10 loops</option>
+        </select>
+      </div>
       <div style="display:flex; gap:8px;">
         <button onclick="toggleMemSwap()" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);">Swap Bytes</button>
         <button onclick="toggleMemBgr()" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);">RGB/BGR</button>
@@ -1142,7 +1152,12 @@
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">4</div>
-          <div>Inside loop, Add Action: <b>Convert Image</b> &gt; input <i>Repeat Item</i> to <b>JPEG</b>.</div>
+          <div>Inside loop, Add Action:
+            <ul style="margin:4px 0 0 16px; color:#ddd; font-size:0.76rem;">
+              <li><b>Static Photos:</b> <b>Convert Image</b> &gt; input <i>Repeat Item</i> to <b>JPEG</b>.</li>
+              <li><b>Live Photos &amp; Motion:</b> <b>Make GIF</b> &gt; input <i>Repeat Item</i> (Seconds Per Frame: <code>0.15</code>, Auto-Size: ON).</li>
+            </ul>
+          </div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">5</div>
@@ -1150,7 +1165,7 @@
             <ul style="margin:4px 0 0 16px; color:var(--muted); font-size:0.76rem;">
               <li>URL: <span style="color:#00e5ff;">Paste the copied URL above</span></li>
               <li>Method: <b>POST</b></li>
-              <li>Request Body: <b>File</b> &gt; select <i>Converted Image</i></li>
+              <li>Request Body: <b>File</b> &gt; select <i>Converted Image</i> (or <i>GIF</i>)</li>
             </ul>
           </div>
         </div>
@@ -1159,8 +1174,11 @@
           <div>Outside loop, Add Action: <b>Show Notification</b> &gt; <i>"✨ Synced photos to LUMO Frame!"</i></div>
         </div>
       </div>
-      <div style="background:rgba(48,209,88,0.1); border:1px solid rgba(48,209,88,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85e89d;">
-        🎉 <b>Multiple photos supported!</b> In the Photos app, tap <b>Select</b>, pick any number of photos, tap <b>Share</b> &gt; <b>Send to LUMO</b>. They will all beam to LUMO in batch!
+      <div style="background:rgba(255,45,85,0.1); border:1px solid rgba(255,45,85,0.3); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#ff7597;">
+        🎞️ <b>Live Photos &amp; GIFs Supported:</b> LUMO natively loops animated GIFs on your desk screen 3 times before advancing to the next memory!
+      </div>
+      <div style="background:rgba(48,209,88,0.1); border:1px solid rgba(48,209,88,0.25); border-radius:10px; padding:10px; margin-top:8px; font-size:0.75rem; color:#85e89d;">
+        🎉 <b>Multiple photos supported!</b> In the Photos app, tap <b>Select</b>, pick any number of photos or Live Photos, tap <b>Share</b> &gt; <b>Send to LUMO</b>. They will all beam to LUMO in batch!
       </div>
     </div>
 
@@ -1197,7 +1215,10 @@
           <div>Inside loop, Add Action: <b>Get Contents of URL</b> &gt; POST to shortcut URL above (Request Body: File &gt; Converted Image).</div>
         </div>
       </div>
-      <div style="background:rgba(10,132,255,0.1); border:1px solid rgba(10,132,255,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85d7ff;">
+      <div style="background:rgba(255,45,85,0.1); border:1px solid rgba(255,45,85,0.3); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#ff7597;">
+        🎞️ <b>Tip for Live Photos:</b> In step 6, replace <b>Convert Image</b> with <b>Make GIF</b> (Seconds Per Frame: <code>0.15</code>) to sync your favorite Live Photos as looping motion memories!
+      </div>
+      <div style="background:rgba(10,132,255,0.1); border:1px solid rgba(10,132,255,0.25); border-radius:10px; padding:10px; margin-top:8px; font-size:0.75rem; color:#85d7ff;">
         🌙 <b>Quota &amp; Storage:</b> LUMO maintains a rolling queue of <b>50 photos total</b>. Upload any number of photos; after 50, older memories automatically make room for new ones on a rolling basis.
       </div>
     </div>
@@ -2192,6 +2213,9 @@
       const intervalSel = document.getElementById("memIntervalSelect");
       if (intervalSel) intervalSel.value = data.interval_sec || 20;
 
+      const gifLoopsSel = document.getElementById("memGifLoopsSelect");
+      if (gifLoopsSel && data.gif_loops !== undefined) gifLoopsSel.value = String(data.gif_loops);
+
       const dupToggle = document.getElementById("memReplaceDuplicatesToggle");
       if (dupToggle) dupToggle.checked = (data.replace_duplicates !== false);
 
@@ -2252,15 +2276,26 @@
 
     if (srcBadge) {
       const src = (cur.source || "").toLowerCase();
-      if (src === "apple_shortcut" || src === "shortcut") {
+      if (cur.is_gif) {
         srcBadge.className = "mem-source-badge shortcut";
-        srcBadge.textContent = "🍏 iOS Shortcut";
-      } else if (src === "obex") {
-        srcBadge.className = "mem-source-badge obex";
-        srcBadge.textContent = "📡 Bluetooth";
+        srcBadge.style.background = "linear-gradient(135deg, rgba(255,45,85,0.25), rgba(255,59,48,0.35))";
+        srcBadge.style.borderColor = "rgba(255,45,85,0.5)";
+        srcBadge.style.color = "#ff375f";
+        srcBadge.textContent = (src === "apple_shortcut" || src === "shortcut") ? "🍏 Live Photo (GIF)" : "🎞️ Animated GIF";
       } else {
-        srcBadge.className = "mem-source-badge upload";
-        srcBadge.textContent = "🌐 Web Upload";
+        srcBadge.style.background = "";
+        srcBadge.style.borderColor = "";
+        srcBadge.style.color = "";
+        if (src === "apple_shortcut" || src === "shortcut") {
+          srcBadge.className = "mem-source-badge shortcut";
+          srcBadge.textContent = "🍏 iOS Shortcut";
+        } else if (src === "obex") {
+          srcBadge.className = "mem-source-badge obex";
+          srcBadge.textContent = "📡 Bluetooth";
+        } else {
+          srcBadge.className = "mem-source-badge upload";
+          srcBadge.textContent = "🌐 Web Upload";
+        }
       }
     }
 
@@ -2282,11 +2317,19 @@
       const item = document.createElement("div");
       item.className = "mem-thumb-item" + (idx === currentMemoryIndex ? " active" : "");
       item.title = m.caption || `Photo ${idx + 1}`;
+      item.style.position = "relative";
 
       const img = document.createElement("img");
       img.src = m.thumb_url;
       img.alt = m.caption || "";
       item.appendChild(img);
+
+      if (m.is_gif) {
+        const gifBadge = document.createElement("span");
+        gifBadge.style.cssText = "position:absolute; bottom:2px; right:2px; font-size:0.5rem; background:rgba(0,0,0,0.8); color:#ff375f; padding:1px 3px; border-radius:3px; font-weight:700; pointer-events:none;";
+        gifBadge.textContent = "GIF";
+        item.appendChild(gifBadge);
+      }
 
       item.onclick = async () => {
         currentMemoryIndex = idx;
@@ -2328,7 +2371,8 @@
         <div style="position:relative;">
           <img src="${m.thumb_url}" alt="${m.caption || ''}" onclick="selectMemoryIndex(${idx})">
           ${isActive ? '<span style="position:absolute; top:4px; left:4px; font-size:0.58rem; font-weight:700; background:rgba(0,255,102,0.9); color:#000; padding:1px 5px; border-radius:4px;">● LIVE</span>' : ''}
-          <span style="position:absolute; bottom:4px; right:4px; font-size:0.58rem; background:rgba(0,0,0,0.7); color:#fff; padding:1px 4px; border-radius:3px;">#${idx + 1}</span>
+          ${m.is_gif ? '<span style="position:absolute; top:4px; right:4px; font-size:0.58rem; font-weight:700; background:rgba(255,45,85,0.85); color:#fff; padding:1px 5px; border-radius:4px;">🎞️ GIF</span>' : `<span style="position:absolute; bottom:4px; right:4px; font-size:0.58rem; background:rgba(0,0,0,0.7); color:#fff; padding:1px 4px; border-radius:3px;">#${idx + 1}</span>`}
+          ${m.is_gif ? `<span style="position:absolute; bottom:4px; right:4px; font-size:0.58rem; background:rgba(0,0,0,0.7); color:#fff; padding:1px 4px; border-radius:3px;">#${idx + 1}</span>` : ''}
         </div>
         <div class="mem-grid-info">
           <div class="mem-grid-title" title="${m.caption || ''}">${m.caption || 'Memory Photo'}</div>
@@ -2543,6 +2587,10 @@
 
   async function changeMemInterval(val) {
     await postApi("/api/memories/config", { interval_sec: parseInt(val) });
+  }
+
+  async function changeMemGifLoops(val) {
+    await postApi("/api/memories/config", { gif_loops: parseInt(val, 10) });
   }
 
   async function toggleMemSwap() {

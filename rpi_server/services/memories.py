@@ -36,6 +36,10 @@ class MemoriesService:
         self.nightly_quota = 0  # 0 = unlimited uploads per night
         self.nightly_uploads: Dict[str, int] = {}
         self.replace_duplicates = True
+        self.gif_loops = 3  # How many times to loop a GIF before advancing
+        self.active_gif_task: Optional[asyncio.Task] = None
+        self.gif_cancel_event = asyncio.Event()
+        self._gif_cache: Dict[str, List[List[bytes]]] = {}
         self.swap_bytes = True
         self.bgr_mode = False
 
@@ -56,6 +60,7 @@ class MemoriesService:
                     if self.nightly_quota == 5:
                         self.nightly_quota = 0  # upgrade from previous default to unlimited
                     self.replace_duplicates = data.get("replace_duplicates", True)
+                    self.gif_loops = data.get("gif_loops", 3)
 
                     # Backfill fingerprint hashes for existing library if missing
                     for p in self.photos:
@@ -90,10 +95,157 @@ class MemoriesService:
                     "nightly_quota": self.nightly_quota,
                     "nightly_uploads": self.nightly_uploads,
                     "replace_duplicates": self.replace_duplicates,
+                    "gif_loops": self.gif_loops,
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save memories index: {e}")
+
+    def set_gif_loops(self, loops: int):
+        self.gif_loops = max(1, loops)
+        self._save_index()
+
+    def is_gif_streaming(self) -> bool:
+        return self.active_gif_task is not None and not self.active_gif_task.done()
+
+    def stop_gif_playback(self):
+        """Immediately signals any active GIF streaming task to stop."""
+        self.gif_cancel_event.set()
+        if self.active_gif_task and not self.active_gif_task.done():
+            self.active_gif_task.cancel()
+        self.active_gif_task = None
+        self.gif_cancel_event = asyncio.Event()
+
+    def _crop_to_4_3(self, img: Image.Image) -> Image.Image:
+        """Center-crops image to 4:3 (320:240) aspect ratio."""
+        target_ratio = 320.0 / 240.0
+        curr_ratio = img.width / img.height
+        if curr_ratio > target_ratio:
+            new_w = int(img.height * target_ratio)
+            left = (img.width - new_w) // 2
+            return img.crop((left, 0, left + new_w, img.height))
+        elif curr_ratio < target_ratio:
+            new_h = int(img.width / target_ratio)
+            top = (img.height - new_h) // 2
+            return img.crop((0, top, img.width, top + new_h))
+        return img
+
+    def _render_frame_strips(self, img: Image.Image) -> List[bytes]:
+        """Converts a 320x240 RGB image into 12 pre-computed binary strip packets."""
+        strip_w = 320
+        strip_h = 20
+        total_strips = 12
+        strips = []
+        for i in range(total_strips):
+            y_off = i * strip_h
+            frame = bytearray(8 + strip_w * strip_h * 2)
+            frame[0] = 0xAA
+            frame[1] = 0xCC  # Frame type: MEMORY_STRIP
+            frame[2] = y_off & 0xFF
+            frame[3] = (y_off >> 8) & 0xFF
+            frame[4] = strip_h & 0xFF
+            frame[5] = (strip_h >> 8) & 0xFF
+            frame[6] = strip_w & 0xFF
+            frame[7] = (strip_w >> 8) & 0xFF
+
+            idx = 8
+            for y in range(y_off, y_off + strip_h):
+                for x in range(strip_w):
+                    r, g, b = img.getpixel((x, y))
+                    rgb565 = self._rgb888_to_rgb565(r, g, b)
+                    if self.swap_bytes:
+                        frame[idx]     = rgb565 & 0xFF
+                        frame[idx + 1] = (rgb565 >> 8) & 0xFF
+                    else:
+                        frame[idx]     = (rgb565 >> 8) & 0xFF
+                        frame[idx + 1] = rgb565 & 0xFF
+                    idx += 2
+            strips.append(bytes(frame))
+        return strips
+
+    def _save_binpack(self, photo_id: str, all_frames_strips: List[List[bytes]]):
+        """Persists pre-rendered RGB565 strips to library/{photo_id}.binpack."""
+        binpack_path = os.path.join(self.library_dir, f"{photo_id}.binpack")
+        try:
+            with open(binpack_path, "wb") as f:
+                for frame in all_frames_strips:
+                    for strip in frame:
+                        f.write(strip)
+        except Exception as e:
+            logger.warning(f"Failed to save binpack for {photo_id}: {e}")
+
+    def _load_gif_strips(self, photo_id: str) -> Optional[List[List[bytes]]]:
+        """Loads pre-rendered strips from memory cache or disk binpack."""
+        if photo_id in self._gif_cache:
+            return self._gif_cache[photo_id]
+
+        binpack_path = os.path.join(self.library_dir, f"{photo_id}.binpack")
+        if os.path.exists(binpack_path):
+            try:
+                with open(binpack_path, "rb") as f:
+                    data = f.read()
+                strip_size = 12808
+                strips_per_frame = 12
+                frame_size = strip_size * strips_per_frame
+                num_frames = len(data) // frame_size
+                all_frames = []
+                for f_idx in range(num_frames):
+                    frame_data = data[f_idx * frame_size : (f_idx + 1) * frame_size]
+                    frame_strips = [
+                        frame_data[s_idx * strip_size : (s_idx + 1) * strip_size]
+                        for s_idx in range(strips_per_frame)
+                    ]
+                    all_frames.append(frame_strips)
+                self._gif_cache[photo_id] = all_frames
+                return all_frames
+            except Exception as e:
+                logger.warning(f"Failed to read binpack for {photo_id}: {e}")
+
+        return None
+
+    def _get_or_load_strips(self, photo: dict) -> Optional[List[List[bytes]]]:
+        """Returns pre-rendered binary strips for a photo/gif, generating on-demand if missing."""
+        photo_id = photo.get("id", "")
+        cached = self._load_gif_strips(photo_id)
+        if cached:
+            return cached
+
+        # Generate on-the-fly from disk image
+        filename = photo.get("filename", "")
+        file_path = os.path.join(self.library_dir, filename)
+        if not os.path.exists(file_path):
+            file_path = os.path.join(self.thumbs_dir, photo.get("thumb", ""))
+            if not os.path.exists(file_path):
+                return None
+
+        try:
+            with Image.open(file_path) as img:
+                is_anim = getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1
+                if is_anim:
+                    num_frames = min(16, img.n_frames)
+                    step = img.n_frames / num_frames
+                    all_frames = []
+                    for i in range(num_frames):
+                        img.seek(int(i * step))
+                        f_rgb = Image.new("RGB", img.size, (0, 0, 0))
+                        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                            rgba = img.convert("RGBA")
+                            f_rgb.paste(rgba, (0, 0), rgba)
+                        else:
+                            f_rgb.paste(img.convert("RGB"), (0, 0))
+                        f_rgb = self._crop_to_4_3(ImageOps.exif_transpose(f_rgb)).resize((320, 240), Image.Resampling.LANCZOS)
+                        all_frames.append(self._render_frame_strips(f_rgb))
+                else:
+                    f_rgb = ImageOps.exif_transpose(img.convert("RGB"))
+                    f_rgb = self._crop_to_4_3(f_rgb).resize((320, 240), Image.Resampling.LANCZOS)
+                    all_frames = [self._render_frame_strips(f_rgb)]
+
+                self._save_binpack(photo_id, all_frames)
+                self._gif_cache[photo_id] = all_frames
+                return all_frames
+        except Exception as e:
+            logger.error(f"Failed to generate strips on-the-fly for {photo_id}: {e}")
+            return None
 
     @staticmethod
     def _calc_dhash(img: Image.Image) -> str:
@@ -215,45 +367,63 @@ class MemoriesService:
             return None
 
     async def ingest_bytes(self, raw: bytes, hub=None, source: str = "upload", filename: str = "", caption: Optional[str] = None, notify: bool = True) -> Optional[Dict[str, Any]]:
-        """Shared processing core for Bluetooth OBEX, Web Upload, and iOS Shortcuts."""
+        """Shared processing core for Bluetooth OBEX, Web Upload, and iOS Shortcuts (supports both static photos and animated GIFs)."""
         if not raw:
             return None
 
         try:
-            img = Image.open(io.BytesIO(raw))
-            # 1. EXIF rotation: Crucial for phone camera shots taken in portrait
-            img = ImageOps.exif_transpose(img).convert("RGB")
+            raw_img = Image.open(io.BytesIO(raw))
+            is_gif = getattr(raw_img, "is_animated", False) and getattr(raw_img, "n_frames", 1) > 1
+
+            if is_gif:
+                num_src_frames = raw_img.n_frames
+                target_count = min(16, num_src_frames)
+                step = num_src_frames / target_count
+                sample_indices = [int(i * step) for i in range(target_count)]
+
+                frames_320 = []
+                for s_idx in sample_indices:
+                    raw_img.seek(s_idx)
+                    f_rgb = Image.new("RGB", raw_img.size, (0, 0, 0))
+                    if raw_img.mode in ("RGBA", "LA") or (raw_img.mode == "P" and "transparency" in raw_img.info):
+                        rgba = raw_img.convert("RGBA")
+                        f_rgb.paste(rgba, (0, 0), rgba)
+                    else:
+                        f_rgb.paste(raw_img.convert("RGB"), (0, 0))
+
+                    f_rgb = ImageOps.exif_transpose(f_rgb)
+                    f_rgb = self._crop_to_4_3(f_rgb)
+                    f_rgb = f_rgb.resize((320, 240), Image.Resampling.LANCZOS)
+                    try:
+                        f_rgb = ImageEnhance.Color(f_rgb).enhance(1.10)
+                        f_rgb = ImageEnhance.Contrast(f_rgb).enhance(1.05)
+                    except Exception:
+                        pass
+                    frames_320.append(f_rgb)
+
+                display_img = frames_320[0]
+                thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
+            else:
+                img = ImageOps.exif_transpose(raw_img).convert("RGB")
+                img = self._crop_to_4_3(img)
+                display_img = img.resize((320, 240), Image.Resampling.LANCZOS)
+                try:
+                    display_img = ImageEnhance.Color(display_img).enhance(1.10)
+                    display_img = ImageEnhance.Contrast(display_img).enhance(1.05)
+                except Exception:
+                    pass
+                thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
+                frames_320 = [display_img]
 
             if not caption or not caption.strip():
-                caption = self._extract_caption_date(img)
+                caption = self._extract_caption_date(raw_img)
             else:
                 caption = str(caption).strip()[:24]
 
-            # 2. Center crop to 4:3 display ratio (320x240)
-            target_ratio = 320.0 / 240.0
-            curr_ratio = img.width / img.height
+            # Pre-render binary strips for all frames (12 strips per frame)
+            all_frame_strips = [self._render_frame_strips(f) for f in frames_320]
 
-            if curr_ratio > target_ratio:
-                new_w = int(img.height * target_ratio)
-                left = (img.width - new_w) // 2
-                img = img.crop((left, 0, left + new_w, img.height))
-            elif curr_ratio < target_ratio:
-                new_h = int(img.width / target_ratio)
-                top = (img.height - new_h) // 2
-                img = img.crop((0, top, img.width, top + new_h))
-
-            # 3. Resize to 320x240 and enhance colors for SPI display
-            display_img = img.resize((320, 240), Image.Resampling.LANCZOS)
-            try:
-                display_img = ImageEnhance.Color(display_img).enhance(1.10)
-                display_img = ImageEnhance.Contrast(display_img).enhance(1.05)
-            except Exception:
-                pass
-
-            # 4. Generate thumbnail for dashboard (160x120)
-            thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
-
-            # Compute image fingerprints for duplicate detection
+            # Fingerprints for deduplication
             raw_hash = hashlib.md5(raw).hexdigest()
             pixel_hash = hashlib.md5(display_img.tobytes()).hexdigest()
             curr_dhash = self._calc_dhash(display_img)
@@ -275,15 +445,37 @@ class MemoriesService:
             if existing_match_idx >= 0:
                 # DUPLICATE FOUND: Replace existing image in-place (do not duplicate!)
                 existing = self.photos.pop(existing_match_idx)
-                lib_file = existing["filename"]
-                thumb_file = existing["thumb"]
+                photo_id = existing["id"]
 
-                # Overwrite the image on disk
-                display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
+                # Remove old files (could be converting jpg <-> gif)
+                self._delete_disk_files(existing)
+
+                ext = ".gif" if is_gif else ".jpg"
+                lib_file = f"{photo_id}{ext}"
+                thumb_file = f"{photo_id}.jpg"
+
+                if is_gif:
+                    frames_320[0].save(
+                        os.path.join(self.library_dir, lib_file),
+                        save_all=True,
+                        append_images=frames_320[1:],
+                        loop=0,
+                        duration=160,
+                        optimize=True
+                    )
+                else:
+                    display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
+
                 thumb_img.save(os.path.join(self.thumbs_dir, thumb_file), "JPEG", quality=85)
+                self._save_binpack(photo_id, all_frame_strips)
+                self._gif_cache[photo_id] = all_frame_strips
 
                 if caption and caption.strip():
                     existing["caption"] = caption
+                existing["filename"] = lib_file
+                existing["thumb"] = thumb_file
+                existing["is_gif"] = is_gif
+                existing["frame_count"] = len(frames_320)
                 existing["added_at"] = datetime.now().isoformat()
                 existing["source"] = source
                 existing["raw_hash"] = raw_hash
@@ -291,10 +483,9 @@ class MemoriesService:
                 existing["dhash"] = curr_dhash
                 existing["is_replaced"] = True
 
-                # Put at front of list (latest)
                 self.photos.insert(0, existing)
                 self._save_index()
-                logger.info(f"Duplicate photo detected: replaced existing memory '{existing['id']}' ({existing.get('caption')}) without duplicating.")
+                logger.info(f"Duplicate photo detected: replaced existing memory '{photo_id}' ({existing.get('caption')}, is_gif={is_gif}) without duplicating.")
 
                 if notify and hub and hub.connected:
                     await hub.send_json({
@@ -306,13 +497,27 @@ class MemoriesService:
 
                 return existing
 
-            # BRAND NEW PHOTO
+            # BRAND NEW MEMORY
             photo_id = f"mem_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-            lib_file = f"{photo_id}.jpg"
+            ext = ".gif" if is_gif else ".jpg"
+            lib_file = f"{photo_id}{ext}"
             thumb_file = f"{photo_id}.jpg"
 
-            display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
+            if is_gif:
+                frames_320[0].save(
+                    os.path.join(self.library_dir, lib_file),
+                    save_all=True,
+                    append_images=frames_320[1:],
+                    loop=0,
+                    duration=160,
+                    optimize=True
+                )
+            else:
+                display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
+
             thumb_img.save(os.path.join(self.thumbs_dir, thumb_file), "JPEG", quality=85)
+            self._save_binpack(photo_id, all_frame_strips)
+            self._gif_cache[photo_id] = all_frame_strips
 
             item = {
                 "id": photo_id,
@@ -324,25 +529,25 @@ class MemoriesService:
                 "raw_hash": raw_hash,
                 "pixel_hash": pixel_hash,
                 "dhash": curr_dhash,
+                "is_gif": is_gif,
+                "frame_count": len(frames_320),
                 "is_replaced": False
             }
 
             self.photos.insert(0, item)
 
-            # Prune oldest if storage limit exceeded (FIFO rolling buffer: keeps latest 50)
             while len(self.photos) > self.max_photos:
                 old = self.photos.pop()
                 self._delete_disk_files(old)
 
             self._save_index()
-            logger.info(f"Successfully ingested memory '{photo_id}' ({caption}) from {source}")
+            logger.info(f"Successfully ingested memory '{photo_id}' ({caption}, is_gif={is_gif}) from {source}")
 
-            # Notify LUMO companion visually if connected and notify is enabled (silent, no haptic buzz)
             if notify and hub and hub.connected:
                 await hub.send_json({
                     "cmd": "NOTIF",
                     "app": "Memories",
-                    "title": "New Photo Added!",
+                    "title": "New Memory Added!",
                     "body": caption
                 })
 
@@ -354,10 +559,22 @@ class MemoriesService:
 
     def _delete_disk_files(self, photo: dict):
         try:
+            pid = photo.get("id", "")
+            for ext in (".jpg", ".gif", ".binpack"):
+                p = os.path.join(self.library_dir, f"{pid}{ext}")
+                if os.path.exists(p):
+                    try: os.remove(p)
+                    except Exception: pass
             lib_p = os.path.join(self.library_dir, photo.get("filename", ""))
+            if os.path.exists(lib_p):
+                try: os.remove(lib_p)
+                except Exception: pass
             thumb_p = os.path.join(self.thumbs_dir, photo.get("thumb", ""))
-            if os.path.exists(lib_p): os.remove(lib_p)
-            if os.path.exists(thumb_p): os.remove(thumb_p)
+            if os.path.exists(thumb_p):
+                try: os.remove(thumb_p)
+                except Exception: pass
+            if pid in self._gif_cache:
+                del self._gif_cache[pid]
         except Exception as e:
             logger.warning(f"Error removing disk files for {photo.get('id')}: {e}")
 
@@ -392,84 +609,92 @@ class MemoriesService:
         self.current_index = self.current_index % len(self.photos)
         return self.photos[self.current_index]
 
-    async def push_current(self, hub) -> bool:
-        """Streams the current memory to ESP32 over WebSocket in 12 RGB565 strips."""
+    async def push_current(self, hub, on_advance=None) -> bool:
+        """Streams current memory (static frame or GIF animation loop) to ESP32."""
         photo = self.get_current()
         if not photo or not hub or not hub.connected:
             return False
 
-        lib_path = os.path.join(self.library_dir, photo["filename"])
-        if not os.path.exists(lib_path):
+        # Stop any running animation loop first
+        self.stop_gif_playback()
+
+        all_frames = self._get_or_load_strips(photo)
+        if not all_frames:
             return False
 
-        try:
-            img = Image.open(lib_path).convert("RGB")
-            if img.size != (320, 240):
-                img = img.resize((320, 240), Image.Resampling.LANCZOS)
+        caption = (photo.get("caption") or "")[:23]
 
-            caption = (photo.get("caption") or "")[:23]
+        # Send metadata once to set caption and clear screen
+        await hub.send_json({
+            "cmd": "MEMORY_META",
+            "caption": caption,
+            "strip_count": 12
+        })
+        await asyncio.sleep(0.02)
 
-            # 1. Metadata frame to clear screen and set caption
-            await hub.send_json({
-                "cmd": "MEMORY_META",
-                "caption": caption,
-                "strip_count": 12
-            })
-            await asyncio.sleep(0.02)
+        is_gif = bool(photo.get("is_gif")) and len(all_frames) > 1
 
-            # 2. Stream 12 horizontal strips (320x20 pixels each = 12,800 bytes)
-            strip_w = 320
-            strip_h = 20
-            total_strips = 12
-
-            for i in range(total_strips):
-                y_off = i * strip_h
-                frame = bytearray(8 + strip_w * strip_h * 2)
-
-                frame[0] = 0xAA
-                frame[1] = 0xCC # Frame type: MEMORY_STRIP
-                frame[2] = y_off & 0xFF
-                frame[3] = (y_off >> 8) & 0xFF
-                frame[4] = strip_h & 0xFF
-                frame[5] = (strip_h >> 8) & 0xFF
-                frame[6] = strip_w & 0xFF
-                frame[7] = (strip_w >> 8) & 0xFF
-
-                idx = 8
-                for y in range(y_off, y_off + strip_h):
-                    for x in range(strip_w):
-                        r, g, b = img.getpixel((x, y))
-                        rgb565 = self._rgb888_to_rgb565(r, g, b)
-                        if self.swap_bytes:
-                            frame[idx]     = rgb565 & 0xFF
-                            frame[idx + 1] = (rgb565 >> 8) & 0xFF
-                        else:
-                            frame[idx]     = (rgb565 >> 8) & 0xFF
-                            frame[idx + 1] = rgb565 & 0xFF
-                        idx += 2
-
-                await hub.send_binary(bytes(frame))
-                await asyncio.sleep(0.015) # 15ms delay per strip
-
-            logger.info(f"Streamed memory '{photo.get('id')}' to ESP32 ({caption})")
+        if is_gif:
+            self.active_gif_task = asyncio.create_task(
+                self._stream_gif_loop(photo, all_frames, hub, on_advance=on_advance)
+            )
+            return True
+        else:
+            # Single static frame
+            for strip in all_frames[0]:
+                await hub.send_binary(strip)
+                await asyncio.sleep(0.015)
+            logger.info(f"Streamed static memory '{photo.get('id')}' to ESP32 ({caption})")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to push memory to ESP32: {e}")
-            return False
+    async def _stream_gif_loop(self, photo: dict, all_frames: List[List[bytes]], hub, on_advance=None):
+        photo_id = photo.get("id", "")
+        loops_to_play = photo.get("gif_loops", self.gif_loops)
+        if loops_to_play <= 0:
+            loops_to_play = 999999
 
-    async def next_photo(self, hub=None) -> Optional[Dict[str, Any]]:
+        logger.info(f"Starting GIF streaming for '{photo_id}' ({len(all_frames)} frames, {loops_to_play} loops)")
+        try:
+            for loop_num in range(loops_to_play):
+                if self.gif_cancel_event.is_set():
+                    break
+
+                for frame_strips in all_frames:
+                    if self.gif_cancel_event.is_set():
+                        break
+
+                    for strip in frame_strips:
+                        if self.gif_cancel_event.is_set():
+                            break
+                        await hub.send_binary(strip)
+                        await asyncio.sleep(0.012)
+
+                    await asyncio.sleep(0.04)
+
+            logger.info(f"GIF playback finished for '{photo_id}' ({loops_to_play} loops completed)")
+
+            if not self.gif_cancel_event.is_set() and on_advance:
+                await on_advance()
+
+        except asyncio.CancelledError:
+            logger.debug(f"GIF streaming cancelled for '{photo_id}'")
+        except Exception as e:
+            logger.error(f"Error during GIF streaming for '{photo_id}': {e}")
+
+    async def next_photo(self, hub=None, on_advance=None) -> Optional[Dict[str, Any]]:
         if not self.photos:
             return None
+        self.stop_gif_playback()
         self.current_index = (self.current_index + 1) % len(self.photos)
         if hub:
-            await self.push_current(hub)
+            await self.push_current(hub, on_advance=on_advance)
         return self.get_current()
 
-    async def prev_photo(self, hub=None) -> Optional[Dict[str, Any]]:
+    async def prev_photo(self, hub=None, on_advance=None) -> Optional[Dict[str, Any]]:
         if not self.photos:
             return None
+        self.stop_gif_playback()
         self.current_index = (self.current_index - 1) % len(self.photos)
         if hub:
-            await self.push_current(hub)
+            await self.push_current(hub, on_advance=on_advance)
         return self.get_current()

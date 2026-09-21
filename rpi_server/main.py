@@ -82,15 +82,54 @@ current_screen = "FACE"
 def get_current_screen():
     return current_screen
 
+memory_timer_task: Optional[asyncio.Task] = None
+
+def _cancel_memory_timer():
+    global memory_timer_task
+    if memory_timer_task and not memory_timer_task.done():
+        memory_timer_task.cancel()
+    memory_timer_task = None
+
+def _start_memory_static_timer():
+    global memory_timer_task
+    _cancel_memory_timer()
+    async def _timer():
+        try:
+            await asyncio.sleep(memories.interval_sec)
+            if current_screen == "MEMORY" and memories.auto_rotate:
+                await memories_auto_advance()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug(f"Memory static timer error: {e}")
+    memory_timer_task = asyncio.create_task(_timer())
+
+async def memories_auto_advance():
+    if current_screen == "MEMORY" and memories.auto_rotate and memories.photos:
+        _cancel_memory_timer()
+        await memories.next_photo(hub, on_advance=memories_auto_advance)
+        if not memories.is_gif_streaming():
+            _start_memory_static_timer()
+
+async def show_memory_current():
+    _cancel_memory_timer()
+    ok = await memories.push_current(hub, on_advance=memories_auto_advance)
+    if ok and current_screen == "MEMORY" and memories.auto_rotate and not memories.is_gif_streaming():
+        _start_memory_static_timer()
+
 async def set_screen_mode(screen: str):
     global current_screen
     touch_interaction()
+    old_screen = current_screen
     current_screen = screen.upper()
+    if old_screen == "MEMORY" and current_screen != "MEMORY":
+        _cancel_memory_timer()
+        memories.stop_gif_playback()
     await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
     if current_screen == "SYSTEM":
         await system_stats.poll(hub, get_current_screen)
     elif current_screen == "MEMORY":
-        await memories.push_current(hub)
+        await show_memory_current()
     logger.info(f"Screen switched -> {current_screen}")
 
 # Wire all live services into JARVIS Voice Brain
@@ -158,7 +197,7 @@ async def on_esp32_ready():
     await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
     await hub.send_json({"cmd": "LIGHTS", "mode": "WARM", "brightness": 40, "hue": 0})
     if current_screen == "MEMORY":
-        await memories.push_current(hub)
+        await show_memory_current()
     # Background sync for external data
     await emotion.push_schedule(hub)
     await tasks.push_to_esp32(hub)
@@ -210,12 +249,20 @@ async def on_button_event(btn: str):
 
     if current_screen == "MEMORY":
         if btn == "LEFT":
-            await memories.prev_photo(hub)
+            _cancel_memory_timer()
+            await memories.prev_photo(hub, on_advance=memories_auto_advance)
+            if not memories.is_gif_streaming() and memories.auto_rotate:
+                _start_memory_static_timer()
             return
         elif btn == "RIGHT":
-            await memories.next_photo(hub)
+            _cancel_memory_timer()
+            await memories.next_photo(hub, on_advance=memories_auto_advance)
+            if not memories.is_gif_streaming() and memories.auto_rotate:
+                _start_memory_static_timer()
             return
         elif btn == "OK":
+            _cancel_memory_timer()
+            memories.stop_gif_playback()
             await set_screen_mode("FACE")
             return
 
@@ -276,15 +323,10 @@ async def lifespan(app: FastAPI):
         if idle_time > 120 and current_screen in ("FACE", "CLOCK"):
             await set_screen_mode("MEMORY")
 
-    async def memories_advance_wrapper():
-        if current_screen == "MEMORY" and memories.auto_rotate:
-            await memories.next_photo(hub)
-
     scheduler.add_job(anim_poll_wrapper, "interval", seconds=2)
     scheduler.add_job(bt_poll_wrapper, "interval", seconds=2)
     scheduler.add_job(bt_events_wrapper, "interval", seconds=2)
     scheduler.add_job(memories_ambient_check, "interval", seconds=10)
-    scheduler.add_job(memories_advance_wrapper, "interval", seconds=memories.interval_sec)
     scheduler.start()
 
     # Watchdog file watcher for OBEX inbox
@@ -413,6 +455,7 @@ async def get_status():
             "nightly_used": memories.get_nightly_upload_count(),
             "nightly_remaining": memories.get_nightly_remaining(),
             "replace_duplicates": memories.replace_duplicates,
+            "gif_loops": memories.gif_loops,
             "current_index": memories.current_index,
             "auto_rotate": memories.auto_rotate,
             "interval_sec": memories.interval_sec,
@@ -698,6 +741,7 @@ class MemoryConfig(BaseModel):
     nightly_quota: Optional[int] = None
     reset_nightly: Optional[bool] = None
     replace_duplicates: Optional[bool] = None
+    gif_loops: Optional[int] = None
 
 @app.get("/api/memories")
 async def get_memories():
@@ -713,6 +757,7 @@ async def get_memories():
         "nightly_used": memories.get_nightly_upload_count(),
         "nightly_remaining": memories.get_nightly_remaining(),
         "replace_duplicates": memories.replace_duplicates,
+        "gif_loops": memories.gif_loops,
     }
 
 async def _process_memory_upload(request: Request, default_source: str = "upload", default_display: bool = False):
@@ -821,7 +866,7 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
         if current_screen != "MEMORY":
             await set_screen_mode("MEMORY")
         else:
-            await memories.push_current(hub)
+            await show_memory_current()
 
     count = len(saved_items)
     replaced_count = sum(1 for p in saved_items if p.get("is_replaced"))
@@ -859,19 +904,25 @@ async def shortcut_upload_memory(request: Request):
 
 @app.post("/api/memories/next")
 async def next_memory():
-    idx = await memories.next_photo(hub)
-    return {"ok": True, "index": idx, "photo": memories.get_current()}
+    _cancel_memory_timer()
+    photo = await memories.next_photo(hub, on_advance=memories_auto_advance)
+    if current_screen == "MEMORY" and memories.auto_rotate and not memories.is_gif_streaming():
+        _start_memory_static_timer()
+    return {"ok": True, "index": memories.current_index, "photo": photo}
 
 @app.post("/api/memories/prev")
 async def prev_memory():
-    idx = await memories.prev_photo(hub)
-    return {"ok": True, "index": idx, "photo": memories.get_current()}
+    _cancel_memory_timer()
+    photo = await memories.prev_photo(hub, on_advance=memories_auto_advance)
+    if current_screen == "MEMORY" and memories.auto_rotate and not memories.is_gif_streaming():
+        _start_memory_static_timer()
+    return {"ok": True, "index": memories.current_index, "photo": photo}
 
 @app.delete("/api/memories/{photo_id}")
 async def delete_memory(photo_id: str):
     ok = memories.delete_photo(photo_id)
     if ok and current_screen == "MEMORY":
-        await memories.push_current(hub)
+        await show_memory_current()
     return {"ok": ok}
 
 @app.post("/api/memories/push")
@@ -880,7 +931,7 @@ async def push_memory_to_display():
     if current_screen != "MEMORY":
         await set_screen_mode("MEMORY")
     else:
-        await memories.push_current(hub)
+        await show_memory_current()
     return {"ok": True}
 
 @app.post("/api/memories/config")
@@ -895,6 +946,8 @@ async def update_memories_config(item: MemoryConfig):
         memories.bgr_mode = item.bgr_mode
     if item.replace_duplicates is not None:
         memories.replace_duplicates = item.replace_duplicates
+    if item.gif_loops is not None:
+        memories.set_gif_loops(item.gif_loops)
     if item.max_photos is not None or item.nightly_quota is not None:
         memories.set_quotas(item.max_photos, item.nightly_quota)
     if item.reset_nightly:
@@ -907,6 +960,7 @@ async def update_memories_config(item: MemoryConfig):
         "swap_bytes": memories.swap_bytes,
         "bgr_mode": memories.bgr_mode,
         "replace_duplicates": memories.replace_duplicates,
+        "gif_loops": memories.gif_loops,
         "max_photos": memories.max_photos,
         "nightly_quota": memories.nightly_quota,
         "nightly_used": memories.get_nightly_upload_count(),
