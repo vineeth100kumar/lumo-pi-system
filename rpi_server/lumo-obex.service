@@ -4,7 +4,7 @@ After=bluetooth.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/obexpushd -B -o /home/pi/lumo-pi-system/rpi_server/static/memories/inbox -n
+ExecStart=/usr/bin/obexpushd -B -o /home/vk/lumo-pi-system/rpi_server/static/memories/inbox -n
 Restart=on-failure
 RestartSec=3
 
