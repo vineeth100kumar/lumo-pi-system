@@ -15,6 +15,32 @@ class BluetoothManager:
         self.connected_device_name = ""
         self.is_connected = False
         self._has_bluetoothctl = shutil.which("bluetoothctl") is not None
+        self._configure_no_audio_hijack()
+
+    def _configure_no_audio_hijack(self):
+        """Ensures WirePlumber does not register A2DP sink or HFP/HSP mic roles.
+        This prevents iOS and Android from routing phone audio and microphone to LUMO.
+        """
+        import os
+        try:
+            home = os.path.expanduser("~")
+            for dirname in ["wireplumber.conf.d", "bluetooth.conf.d"]:
+                wp_dir = os.path.join(home, ".config", "wireplumber", dirname)
+                os.makedirs(wp_dir, exist_ok=True)
+                for bad_file in ["50-bluez-all-roles.conf", "51-disable-a2dp-sink.conf"]:
+                    bad_path = os.path.join(wp_dir, bad_file)
+                    if os.path.exists(bad_path):
+                        try:
+                            os.remove(bad_path)
+                            logger.info(f"Cleaned up legacy audio hijack config: {bad_path}")
+                        except OSError:
+                            pass
+
+                cfg_path = os.path.join(wp_dir, "50-no-bluetooth-audio.conf")
+                with open(cfg_path, "w") as f:
+                    f.write("# LUMO: Disable audio sink & mic roles to prevent phone audio hijacking\nmonitor.bluez.properties = {\n  bluez5.roles = [ ]\n}\n")
+        except Exception as e:
+            logger.debug(f"WirePlumber profile configuration skipped: {e}")
 
     def is_available(self) -> bool:
         return self._has_bluetoothctl
@@ -102,6 +128,7 @@ class BluetoothManager:
 
         # Setup Bluetooth adapter as a Wearable Smartwatch (CoD: 0x000704)
         # This tells iOS it's a wearable, NOT an audio speaker!
+        self._configure_no_audio_hijack()
         await self._run_cmd(["hciconfig", "hci0", "class", "0x000704"])
         await self._run_cmd(["bluetoothctl", "power", "on"])
         await self._run_cmd(["bluetoothctl", "system-alias", "LUMO Companion"])
@@ -142,11 +169,23 @@ class BluetoothManager:
             logger.info("Bluetooth OBEX Object Push (OPUSH) SDP record registered.")
 
     async def apply_wearable_config(self) -> Dict[str, Any]:
-        """Sets Class of Device to 0x000704 (Wearable Watch) and disables A2DP audio sink."""
+        """Sets Class of Device to 0x000704 (Wearable Watch) and disables A2DP audio sink and HFP mic."""
         import os
+        self._configure_no_audio_hijack()
         await self._run_cmd(["hciconfig", "hci0", "class", "0x000704"])
         await self._run_cmd(["bluetoothctl", "system-alias", "LUMO Companion"])
         await self._register_opp_service()
+
+        # Restart WirePlumber / PipeWire user services
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "systemctl", "--user", "restart", "wireplumber", "pipewire", "pipewire-pulse",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.communicate()
+        except Exception:
+            pass
 
         # Execute setup_wearable_mode.sh if present
         script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "setup_wearable_mode.sh")
