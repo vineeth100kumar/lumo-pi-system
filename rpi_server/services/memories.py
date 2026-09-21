@@ -232,7 +232,7 @@ class MemoriesService:
             self._save_index()
             logger.info(f"Successfully ingested memory '{photo_id}' ({caption}) from {source}")
 
-            # Notify LUMO companion if connected and notify is enabled
+            # Notify LUMO companion visually if connected and notify is enabled (silent, no haptic buzz)
             if notify and hub and hub.connected:
                 await hub.send_json({
                     "cmd": "NOTIF",
@@ -240,7 +240,6 @@ class MemoriesService:
                     "title": "New Photo Added!",
                     "body": caption
                 })
-                await hub.send_json({"cmd": "HAPTIC", "ms": 80})
 
             return item
 

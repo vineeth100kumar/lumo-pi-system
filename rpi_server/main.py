@@ -779,7 +779,7 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
             if item:
                 saved_items.append(item)
 
-        # Notify once for entire batch
+        # Notify once for entire batch (silent visual banner, no haptic buzz)
         if is_batch and saved_items and hub and hub.connected:
             await hub.send_json({
                 "cmd": "NOTIF",
@@ -787,7 +787,6 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
                 "title": "Memories Synced!",
                 "body": f"{len(saved_items)} photos added"
             })
-            await hub.send_json({"cmd": "HAPTIC", "ms": 80})
 
     else:
         # Direct raw binary body (e.g. Apple Shortcuts "Request Body: File" or cURL --data-binary)
