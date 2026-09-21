@@ -1001,6 +1001,18 @@
         </div>
       </div>
 
+      <!-- Deduplication Toggle -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:0.82rem;">
+        <div>
+          <span style="color:#eee;">Replace Duplicates</span>
+          <div style="font-size:0.68rem; color:var(--muted);">Update existing photo instead of creating a duplicate</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="memReplaceDuplicatesToggle" onchange="toggleMemReplaceDuplicates(this.checked)" checked>
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:0.82rem;">
         <span style="color:#eee;">Ambient Idle Auto-Rotate (after 2m)</span>
         <label class="toggle-switch">
@@ -2180,6 +2192,9 @@
       const intervalSel = document.getElementById("memIntervalSelect");
       if (intervalSel) intervalSel.value = data.interval_sec || 20;
 
+      const dupToggle = document.getElementById("memReplaceDuplicatesToggle");
+      if (dupToggle) dupToggle.checked = (data.replace_duplicates !== false);
+
       const liveBadge = document.getElementById("memDeskLiveBadge");
       if (liveBadge) liveBadge.style.display = (activeScreenMode === "MEMORY") ? "inline-flex" : "none";
 
@@ -2448,6 +2463,7 @@
     document.body.appendChild(toast);
 
     let successCount = 0;
+    let serverMsg = "";
     try {
       const fd = new FormData();
       for (let i = 0; i < files.length; i++) {
@@ -2459,6 +2475,7 @@
       const data = await res.json();
       if (data.ok) {
         successCount = data.count || files.length;
+        if (data.message) serverMsg = data.message;
       }
     } catch (err) {
       console.error("Batch upload error, falling back to sequential:", err);
@@ -2469,13 +2486,16 @@
           if (customCaption) sfd.append("caption", customCaption);
           const sres = await fetch("/api/memories/upload", { method: "POST", body: sfd });
           const sdata = await sres.json();
-          if (sdata.ok) successCount++;
+          if (sdata.ok) {
+            successCount++;
+            if (sdata.message) serverMsg = sdata.message;
+          }
         } catch (e) {}
       }
     }
 
-    toast.innerHTML = `<span>✅</span> Ingested ${successCount} photo${successCount > 1 ? 's' : ''}!`;
-    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2500);
+    toast.innerHTML = `<span>✅</span> ` + (serverMsg || `Ingested ${successCount} photo${successCount > 1 ? 's' : ''}!`);
+    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2800);
 
     const input = document.getElementById("memFileInput");
     if (input) input.value = "";
@@ -2511,6 +2531,10 @@
     if (tray) {
       tray.style.display = (tray.style.display === "none" || !tray.style.display) ? "block" : "none";
     }
+  }
+
+  async function toggleMemReplaceDuplicates(val) {
+    await postApi("/api/memories/config", { replace_duplicates: val });
   }
 
   async function toggleMemAutoRotate(val) {

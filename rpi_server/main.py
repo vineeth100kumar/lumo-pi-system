@@ -412,6 +412,7 @@ async def get_status():
             "nightly_quota": memories.nightly_quota,
             "nightly_used": memories.get_nightly_upload_count(),
             "nightly_remaining": memories.get_nightly_remaining(),
+            "replace_duplicates": memories.replace_duplicates,
             "current_index": memories.current_index,
             "auto_rotate": memories.auto_rotate,
             "interval_sec": memories.interval_sec,
@@ -696,6 +697,7 @@ class MemoryConfig(BaseModel):
     max_photos: Optional[int] = None
     nightly_quota: Optional[int] = None
     reset_nightly: Optional[bool] = None
+    replace_duplicates: Optional[bool] = None
 
 @app.get("/api/memories")
 async def get_memories():
@@ -710,6 +712,7 @@ async def get_memories():
         "nightly_quota": memories.nightly_quota,
         "nightly_used": memories.get_nightly_upload_count(),
         "nightly_remaining": memories.get_nightly_remaining(),
+        "replace_duplicates": memories.replace_duplicates,
     }
 
 async def _process_memory_upload(request: Request, default_source: str = "upload", default_display: bool = False):
@@ -821,15 +824,22 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
             await memories.push_current(hub)
 
     count = len(saved_items)
+    replaced_count = sum(1 for p in saved_items if p.get("is_replaced"))
     quota_info = f"Quota: {len(memories.photos)}/{memories.max_photos}"
     if memories.nightly_quota > 0:
         quota_info += f", Nightly: {memories.get_nightly_upload_count()}/{memories.nightly_quota}"
+
+    msg = f"Saved {count} photo{'s' if count > 1 else ''} to LUMO!"
+    if replaced_count > 0:
+        msg = f"Synced {count} photo{'s' if count > 1 else ''} ({replaced_count} duplicate{'s' if replaced_count > 1 else ''} replaced)!"
+    msg += f" ({quota_info})"
 
     return {
         "ok": True,
         "status": "success",
         "count": count,
-        "message": f"Saved {count} photo{'s' if count > 1 else ''} to LUMO! ({quota_info})",
+        "replaced_count": replaced_count,
+        "message": msg,
         "photos": saved_items,
         "photo": saved_items[0],
         "nightly_used": memories.get_nightly_upload_count(),
@@ -844,29 +854,25 @@ async def upload_memory(request: Request):
     return await _process_memory_upload(request, default_source="upload", default_display=False)
 
 @app.post("/api/memories/shortcut")
-async def shortcut_upload(request: Request):
-    return await _process_memory_upload(request, default_source="apple_shortcut", default_display=True)
+async def shortcut_upload_memory(request: Request):
+    return await _process_memory_upload(request, default_source="apple_shortcut", default_display=False)
+
+@app.post("/api/memories/next")
+async def next_memory():
+    idx = await memories.next_photo(hub)
+    return {"ok": True, "index": idx, "photo": memories.get_current()}
+
+@app.post("/api/memories/prev")
+async def prev_memory():
+    idx = await memories.prev_photo(hub)
+    return {"ok": True, "index": idx, "photo": memories.get_current()}
 
 @app.delete("/api/memories/{photo_id}")
 async def delete_memory(photo_id: str):
     ok = memories.delete_photo(photo_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Photo not found")
-    if current_screen == "MEMORY" and hub.connected:
+    if ok and current_screen == "MEMORY":
         await memories.push_current(hub)
-    return {"ok": True}
-
-@app.post("/api/memories/next")
-async def next_memory():
-    touch_interaction()
-    photo = await memories.next_photo(hub if current_screen == "MEMORY" else None)
-    return {"ok": True, "photo": photo, "index": memories.current_index}
-
-@app.post("/api/memories/prev")
-async def prev_memory():
-    touch_interaction()
-    photo = await memories.prev_photo(hub if current_screen == "MEMORY" else None)
-    return {"ok": True, "photo": photo, "index": memories.current_index}
+    return {"ok": ok}
 
 @app.post("/api/memories/push")
 async def push_memory_to_display():
@@ -887,6 +893,8 @@ async def update_memories_config(item: MemoryConfig):
         memories.swap_bytes = item.swap_bytes
     if item.bgr_mode is not None:
         memories.bgr_mode = item.bgr_mode
+    if item.replace_duplicates is not None:
+        memories.replace_duplicates = item.replace_duplicates
     if item.max_photos is not None or item.nightly_quota is not None:
         memories.set_quotas(item.max_photos, item.nightly_quota)
     if item.reset_nightly:
@@ -898,6 +906,7 @@ async def update_memories_config(item: MemoryConfig):
         "interval_sec": memories.interval_sec,
         "swap_bytes": memories.swap_bytes,
         "bgr_mode": memories.bgr_mode,
+        "replace_duplicates": memories.replace_duplicates,
         "max_photos": memories.max_photos,
         "nightly_quota": memories.nightly_quota,
         "nightly_used": memories.get_nightly_upload_count(),

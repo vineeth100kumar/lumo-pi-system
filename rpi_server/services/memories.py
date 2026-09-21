@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import io
 import json
 import logging
@@ -34,6 +35,7 @@ class MemoriesService:
         self.max_photos = 50
         self.nightly_quota = 0  # 0 = unlimited uploads per night
         self.nightly_uploads: Dict[str, int] = {}
+        self.replace_duplicates = True
         self.swap_bytes = True
         self.bgr_mode = False
 
@@ -53,7 +55,19 @@ class MemoriesService:
                     self.nightly_quota = data.get("nightly_quota", 0)
                     if self.nightly_quota == 5:
                         self.nightly_quota = 0  # upgrade from previous default to unlimited
-                    self.nightly_uploads = data.get("nightly_uploads", {})
+                    self.replace_duplicates = data.get("replace_duplicates", True)
+
+                    # Backfill fingerprint hashes for existing library if missing
+                    for p in self.photos:
+                        if not p.get("pixel_hash") or not p.get("dhash"):
+                            lib_p = os.path.join(self.library_dir, p.get("filename", ""))
+                            if os.path.exists(lib_p):
+                                try:
+                                    with Image.open(lib_p) as ex_img:
+                                        p["pixel_hash"] = hashlib.md5(ex_img.tobytes()).hexdigest()
+                                        p["dhash"] = self._calc_dhash(ex_img)
+                                except Exception:
+                                    pass
 
                     # Enforce max quota on existing library
                     while len(self.photos) > self.max_photos:
@@ -75,10 +89,39 @@ class MemoriesService:
                     "max_photos": self.max_photos,
                     "nightly_quota": self.nightly_quota,
                     "nightly_uploads": self.nightly_uploads,
+                    "replace_duplicates": self.replace_duplicates,
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save memories index: {e}")
+
+    @staticmethod
+    def _calc_dhash(img: Image.Image) -> str:
+        """Computes a 64-bit difference hash (dhash) for perceptual duplicate detection."""
+        try:
+            small = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+            pixels = list(small.getdata())
+            diff = []
+            for row in range(8):
+                row_offset = row * 9
+                for col in range(8):
+                    diff.append(pixels[row_offset + col] > pixels[row_offset + col + 1])
+            decimal_val = 0
+            for bit in diff:
+                decimal_val = (decimal_val << 1) | int(bit)
+            return f"{decimal_val:016x}"
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _hamming_distance(s1: str, s2: str) -> int:
+        """Returns bit difference between two 64-bit hex hash strings."""
+        if not s1 or not s2 or len(s1) != len(s2):
+            return 999
+        try:
+            return bin(int(s1, 16) ^ int(s2, 16)).count("1")
+        except ValueError:
+            return 999
 
     def _get_logical_night_key(self) -> str:
         """Returns the logical night date key (shifts midnight to 6:00 AM).
@@ -210,6 +253,60 @@ class MemoriesService:
             # 4. Generate thumbnail for dashboard (160x120)
             thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
 
+            # Compute image fingerprints for duplicate detection
+            raw_hash = hashlib.md5(raw).hexdigest()
+            pixel_hash = hashlib.md5(display_img.tobytes()).hexdigest()
+            curr_dhash = self._calc_dhash(display_img)
+
+            # Check for existing duplicate if replace_duplicates is enabled
+            existing_match_idx = -1
+            if self.replace_duplicates:
+                for idx, p in enumerate(self.photos):
+                    if p.get("raw_hash") and p["raw_hash"] == raw_hash:
+                        existing_match_idx = idx
+                        break
+                    if p.get("pixel_hash") and p["pixel_hash"] == pixel_hash:
+                        existing_match_idx = idx
+                        break
+                    if p.get("dhash") and self._hamming_distance(p["dhash"], curr_dhash) <= 4:
+                        existing_match_idx = idx
+                        break
+
+            if existing_match_idx >= 0:
+                # DUPLICATE FOUND: Replace existing image in-place (do not duplicate!)
+                existing = self.photos.pop(existing_match_idx)
+                lib_file = existing["filename"]
+                thumb_file = existing["thumb"]
+
+                # Overwrite the image on disk
+                display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
+                thumb_img.save(os.path.join(self.thumbs_dir, thumb_file), "JPEG", quality=85)
+
+                if caption and caption.strip():
+                    existing["caption"] = caption
+                existing["added_at"] = datetime.now().isoformat()
+                existing["source"] = source
+                existing["raw_hash"] = raw_hash
+                existing["pixel_hash"] = pixel_hash
+                existing["dhash"] = curr_dhash
+                existing["is_replaced"] = True
+
+                # Put at front of list (latest)
+                self.photos.insert(0, existing)
+                self._save_index()
+                logger.info(f"Duplicate photo detected: replaced existing memory '{existing['id']}' ({existing.get('caption')}) without duplicating.")
+
+                if notify and hub and hub.connected:
+                    await hub.send_json({
+                        "cmd": "NOTIF",
+                        "app": "Memories",
+                        "title": "Photo Replaced",
+                        "body": existing.get("caption") or "Duplicate updated"
+                    })
+
+                return existing
+
+            # BRAND NEW PHOTO
             photo_id = f"mem_{int(time.time())}_{uuid.uuid4().hex[:6]}"
             lib_file = f"{photo_id}.jpg"
             thumb_file = f"{photo_id}.jpg"
@@ -223,12 +320,16 @@ class MemoriesService:
                 "thumb": thumb_file,
                 "caption": caption,
                 "added_at": datetime.now().isoformat(),
-                "source": source
+                "source": source,
+                "raw_hash": raw_hash,
+                "pixel_hash": pixel_hash,
+                "dhash": curr_dhash,
+                "is_replaced": False
             }
 
             self.photos.insert(0, item)
 
-            # Prune oldest if storage limit exceeded
+            # Prune oldest if storage limit exceeded (FIFO rolling buffer: keeps latest 50)
             while len(self.photos) > self.max_photos:
                 old = self.photos.pop()
                 self._delete_disk_files(old)
