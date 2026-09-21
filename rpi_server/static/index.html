@@ -951,7 +951,7 @@
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
       <div style="display:flex; align-items:center; gap:6px;">
         <span style="font-size:0.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">All Memories</span>
-        <span id="memCountBadge" class="badge" style="font-size:0.72rem; padding:2px 8px; background:rgba(0,229,255,0.1); color:var(--accent);">0 / 20 Photos</span>
+        <span id="memCountBadge" class="badge" style="font-size:0.72rem; padding:2px 8px; background:rgba(0,229,255,0.1); color:var(--accent);">0 / 50 Photos</span>
       </div>
       <div style="display:flex; background:rgba(255,255,255,0.06); border-radius:8px; padding:2px; gap:2px;">
         <button id="btnViewFilmstrip" onclick="setMemViewMode('filmstrip')" style="padding:3px 7px; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.15); color:#fff; border:none; cursor:pointer;" title="Filmstrip view">🎞️ Strip</button>
@@ -975,7 +975,7 @@
       </div>
       <div style="font-size:0.74rem; color:var(--muted); line-height:1.4;">
         Drag &amp; drop images here or <b>browse files</b> (JPEG, PNG, HEIC).<br>
-        Multiple files supported &bull; Auto-optimized to 320&times;240 for LCD.
+        Upload any number of images &bull; Auto-optimized to 320&times;240 for LCD.
       </div>
       <input type="file" id="memFileInput" accept="image/*" multiple style="display:none;" onchange="handleFileInput(this.files)">
     </div>
@@ -992,16 +992,12 @@
       
       <!-- Quota summary bar -->
       <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:8px 12px; margin-bottom:12px; font-size:0.78rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <span style="color:var(--muted);">Total Quota:</span>
-          <span style="color:#fff; font-weight:600;"><span id="memTotalStoredText">0</span> / 20 Photos (FIFO Rolling)</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span style="color:var(--muted);">Total Capacity:</span>
+          <span style="color:#fff; font-weight:600;"><span id="memTotalStoredText">0</span> / 50 Photos (Rolling Overwrite)</span>
         </div>
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="color:var(--muted);">Nightly Sync (Tonight):</span>
-          <div style="display:flex; align-items:center; gap:6px;">
-            <span id="memTonightSyncText" style="color:#00E5FF; font-weight:600;">0 / 5 photos</span>
-            <button onclick="resetTonightSync()" style="font-size:0.68rem; padding:2px 7px; background:rgba(255,255,255,0.08); border-radius:4px; cursor:pointer;" title="Reset tonight's quota count">Reset</button>
-          </div>
+        <div style="font-size:0.7rem; color:var(--muted); line-height:1.35;">
+          Upload any number of images. Once the library reaches 50 photos, older photos are automatically overwritten.
         </div>
       </div>
 
@@ -1152,13 +1148,13 @@
         </div>
       </div>
       <div style="background:rgba(48,209,88,0.1); border:1px solid rgba(48,209,88,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85e89d;">
-        🎉 <b>Multiple photos supported!</b> In the Photos app, tap <b>Select</b>, pick 1, 5, or 20 photos, tap <b>Share</b> &gt; <b>Send to LUMO</b>. They will all beam to LUMO in batch!
+        🎉 <b>Multiple photos supported!</b> In the Photos app, tap <b>Select</b>, pick any number of photos, tap <b>Share</b> &gt; <b>Send to LUMO</b>. They will all beam to LUMO in batch!
       </div>
     </div>
 
     <!-- Tab 2: Autonomous Nightly Batch Sync -->
     <div id="shortcutTabAuto" style="display:none; font-size:0.8rem; line-height:1.55;">
-      <div style="margin-bottom:10px; color:#ddd;">Automatically sync up to <b>5 favorite photos taken today</b> every night when charging:</div>
+      <div style="margin-bottom:10px; color:#ddd;">Automatically sync your favorite photos taken today every night when charging:</div>
       <div style="display:flex; flex-direction:column; gap:10px;">
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">1</div>
@@ -1174,11 +1170,11 @@
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">4</div>
-          <div>Add Action: <b>Get Items from List</b> &gt; Set Range: <b>1 to 5</b> (caps nightly sync to 5 photos).</div>
+          <div>(Optional) Add Action: <b>Get Items from List</b> or skip this step to sync <b>all favorite photos</b>.</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">5</div>
-          <div>Add Action: <b>Repeat with Each</b> &gt; Input: <i>Items from List</i>.</div>
+          <div>Add Action: <b>Repeat with Each</b> &gt; Input: <i>Photos</i> (or <i>Items from List</i>).</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start;">
           <div class="step-badge">6</div>
@@ -1190,7 +1186,7 @@
         </div>
       </div>
       <div style="background:rgba(10,132,255,0.1); border:1px solid rgba(10,132,255,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85d7ff;">
-        🌙 <b>Quota &amp; Storage:</b> LUMO maintains a rolling queue of <b>20 photos total</b> (older memories automatically make room for new ones) with a rate limit of <b>5 photos uploaded per night</b>.
+        🌙 <b>Quota &amp; Storage:</b> LUMO maintains a rolling queue of <b>50 photos total</b>. Upload any number of photos; after 50, older memories automatically make room for new ones on a rolling basis.
       </div>
     </div>
 
@@ -2162,18 +2158,21 @@
       cachedMemories = data.photos || [];
       currentMemoryIndex = data.current_index || 0;
 
-      const maxP = data.max_photos || 20;
+      const maxP = data.max_photos || 50;
       const nightlyUsed = data.nightly_used !== undefined ? data.nightly_used : 0;
-      const nightlyQuota = data.nightly_quota || 5;
+      const nightlyQuota = data.nightly_quota || 0;
 
       const countBadge = document.getElementById("memCountBadge");
-      if (countBadge) countBadge.textContent = `${cachedMemories.length} / ${maxP} Photos (${nightlyUsed}/${nightlyQuota} tonight)`;
+      if (countBadge) {
+        if (nightlyQuota > 0) {
+          countBadge.textContent = `${cachedMemories.length} / ${maxP} Photos (${nightlyUsed}/${nightlyQuota} tonight)`;
+        } else {
+          countBadge.textContent = `${cachedMemories.length} / ${maxP} Photos`;
+        }
+      }
 
       const totalStored = document.getElementById("memTotalStoredText");
       if (totalStored) totalStored.textContent = cachedMemories.length;
-
-      const tonightSync = document.getElementById("memTonightSyncText");
-      if (tonightSync) tonightSync.textContent = `${nightlyUsed} / ${nightlyQuota} photos`;
 
       const autoToggle = document.getElementById("memAutoRotateToggle");
       if (autoToggle) autoToggle.checked = !!data.auto_rotate;

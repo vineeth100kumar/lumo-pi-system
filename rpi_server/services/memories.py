@@ -31,8 +31,8 @@ class MemoriesService:
         self.current_index = 0
         self.auto_rotate = True
         self.interval_sec = 20
-        self.max_photos = 20
-        self.nightly_quota = 5
+        self.max_photos = 50
+        self.nightly_quota = 0  # 0 = unlimited uploads per night
         self.nightly_uploads: Dict[str, int] = {}
         self.swap_bytes = True
         self.bgr_mode = False
@@ -47,8 +47,12 @@ class MemoriesService:
                     self.photos = data.get("photos", [])
                     self.auto_rotate = data.get("auto_rotate", True)
                     self.interval_sec = data.get("interval_sec", 20)
-                    self.max_photos = data.get("max_photos", 20)
-                    self.nightly_quota = data.get("nightly_quota", 5)
+                    self.max_photos = data.get("max_photos", 50)
+                    if self.max_photos < 50:
+                        self.max_photos = 50
+                    self.nightly_quota = data.get("nightly_quota", 0)
+                    if self.nightly_quota == 5:
+                        self.nightly_quota = 0  # upgrade from previous default to unlimited
                     self.nightly_uploads = data.get("nightly_uploads", {})
 
                     # Enforce max quota on existing library
@@ -56,7 +60,7 @@ class MemoriesService:
                         old = self.photos.pop()
                         self._delete_disk_files(old)
 
-                    logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max, {self.nightly_quota}/night).")
+                    logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer).")
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
                 self.photos = []
@@ -91,7 +95,7 @@ class MemoriesService:
 
     def get_nightly_remaining(self) -> int:
         if self.nightly_quota <= 0:
-            return 999
+            return 999999
         return max(0, self.nightly_quota - self.get_nightly_upload_count())
 
     def record_nightly_upload(self, count: int = 1):
@@ -119,7 +123,7 @@ class MemoriesService:
                 old = self.photos.pop()
                 self._delete_disk_files(old)
         if nightly_quota is not None:
-            self.nightly_quota = max(1, nightly_quota)
+            self.nightly_quota = max(0, nightly_quota)
         self._save_index()
 
     def _rgb888_to_rgb565(self, r: int, g: int, b: int) -> int:

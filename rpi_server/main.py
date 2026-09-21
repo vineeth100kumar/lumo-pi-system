@@ -724,9 +724,9 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
 
     force = request.query_params.get("force", "").lower() in ("true", "1", "yes")
 
-    # Check nightly quota for automated Apple Shortcuts sync (max 5 photos per night)
+    # Check nightly quota for automated Apple Shortcuts sync if configured (> 0)
     is_automated_sync = (source == "apple_shortcut" or default_source == "apple_shortcut") and not force
-    if is_automated_sync:
+    if is_automated_sync and memories.nightly_quota > 0:
         remaining_nightly = memories.get_nightly_remaining()
         if remaining_nightly <= 0:
             return {
@@ -756,9 +756,11 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
             if isinstance(val, UploadFile):
                 files_to_process.append(val)
 
-        # If automated sync, cap batch to remaining slots for tonight (max 5 per night)
-        if is_automated_sync and remaining_nightly < len(files_to_process):
-            files_to_process = files_to_process[:remaining_nightly]
+        # If automated sync and nightly limit configured, cap batch to remaining slots
+        if is_automated_sync and memories.nightly_quota > 0:
+            remaining_nightly = memories.get_nightly_remaining()
+            if remaining_nightly < len(files_to_process):
+                files_to_process = files_to_process[:remaining_nightly]
 
         is_batch = len(files_to_process) > 1
 
@@ -819,11 +821,15 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
             await memories.push_current(hub)
 
     count = len(saved_items)
+    quota_info = f"Quota: {len(memories.photos)}/{memories.max_photos}"
+    if memories.nightly_quota > 0:
+        quota_info += f", Nightly: {memories.get_nightly_upload_count()}/{memories.nightly_quota}"
+
     return {
         "ok": True,
         "status": "success",
         "count": count,
-        "message": f"Saved {count} photo{'s' if count > 1 else ''} to LUMO! (Quota: {len(memories.photos)}/{memories.max_photos}, Nightly: {memories.get_nightly_upload_count()}/{memories.nightly_quota})",
+        "message": f"Saved {count} photo{'s' if count > 1 else ''} to LUMO! ({quota_info})",
         "photos": saved_items,
         "photo": saved_items[0],
         "nightly_used": memories.get_nightly_upload_count(),
