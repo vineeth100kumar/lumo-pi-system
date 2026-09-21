@@ -701,15 +701,68 @@ async def get_memories():
         "bgr_mode": memories.bgr_mode,
     }
 
-@app.post("/api/memories/upload")
-async def upload_memory(file: UploadFile = File(...)):
-    raw = await file.read()
-    item = await memories.ingest_bytes(raw, hub=hub, source="upload", filename=file.filename or "upload.jpg")
+async def _process_memory_upload(request: Request, default_source: str = "upload", default_display: bool = False):
+    caption = request.query_params.get("caption") or request.headers.get("x-caption")
+    display_param = request.query_params.get("display")
+    should_display = default_display
+    if display_param is not None:
+        should_display = display_param.lower() in ("true", "1", "yes")
+
+    source = request.query_params.get("source") or default_source
+    raw_bytes = None
+    filename = "upload.jpg"
+
+    content_type = request.headers.get("content-type", "")
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        file_obj = form.get("file") or form.get("photo") or form.get("image")
+        if isinstance(file_obj, UploadFile):
+            raw_bytes = await file_obj.read()
+            filename = file_obj.filename or filename
+        if "caption" in form and form["caption"]:
+            caption = str(form["caption"])
+        if "display" in form and form["display"]:
+            should_display = str(form["display"]).lower() in ("true", "1", "yes")
+    else:
+        # Direct raw binary body (e.g. Apple Shortcuts "Request Body: File" or cURL --data-binary)
+        raw_bytes = await request.body()
+        filename = request.headers.get("x-filename") or "shortcut.jpg"
+
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="No image file or image data received")
+
+    item = await memories.ingest_bytes(
+        raw_bytes,
+        hub=hub,
+        source=source,
+        filename=filename,
+        caption=caption
+    )
     if not item:
-        raise HTTPException(status_code=400, detail="Invalid image file or processing failed")
-    if current_screen == "MEMORY":
-        await memories.push_current(hub)
-    return {"ok": True, "photo": item}
+        raise HTTPException(status_code=400, detail="Invalid image file or image decoding failed")
+
+    if should_display or current_screen == "MEMORY":
+        if current_screen != "MEMORY":
+            await set_screen_mode("MEMORY")
+        else:
+            await memories.push_current(hub)
+
+    return {
+        "ok": True,
+        "status": "success",
+        "message": f"Memory '{item['caption']}' saved to LUMO!",
+        "photo": item,
+        "displayed": should_display or current_screen == "MEMORY"
+    }
+
+@app.post("/api/memories/upload")
+async def upload_memory(request: Request):
+    return await _process_memory_upload(request, default_source="upload", default_display=False)
+
+@app.post("/api/memories/shortcut")
+async def shortcut_upload(request: Request):
+    return await _process_memory_upload(request, default_source="apple_shortcut", default_display=True)
 
 @app.delete("/api/memories/{photo_id}")
 async def delete_memory(photo_id: str):

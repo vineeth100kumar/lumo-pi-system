@@ -102,7 +102,7 @@ class MemoriesService:
                 except Exception: pass
             return None
 
-    async def ingest_bytes(self, raw: bytes, hub=None, source: str = "upload", filename: str = "") -> Optional[Dict[str, Any]]:
+    async def ingest_bytes(self, raw: bytes, hub=None, source: str = "upload", filename: str = "", caption: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Shared processing core for Bluetooth OBEX, Web Upload, and iOS Shortcuts."""
         if not raw:
             return None
@@ -112,7 +112,10 @@ class MemoriesService:
             # 1. EXIF rotation: Crucial for phone camera shots taken in portrait
             img = ImageOps.exif_transpose(img).convert("RGB")
 
-            caption = self._extract_caption_date(img)
+            if not caption or not caption.strip():
+                caption = self._extract_caption_date(img)
+            else:
+                caption = str(caption).strip()[:24]
 
             # 2. Center crop to 4:3 display ratio (320x240)
             target_ratio = 320.0 / 240.0

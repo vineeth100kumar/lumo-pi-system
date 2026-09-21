@@ -312,6 +312,207 @@
       background: rgba(0,229,255,0.12);
       transform: translateY(-1px);
     }
+
+    /* Memories Card & Modal Modern UI */
+    .mem-hero {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #090a10;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s ease;
+    }
+    .mem-hero.live-glow {
+      border-color: rgba(0, 229, 255, 0.45);
+      box-shadow: 0 0 24px rgba(0, 229, 255, 0.25);
+    }
+    .mem-hero.drag-active {
+      border: 2px dashed var(--accent) !important;
+      background: rgba(10, 132, 255, 0.15) !important;
+    }
+    .mem-overlay-actions {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 6px;
+      z-index: 5;
+    }
+    .mem-icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(15, 18, 25, 0.82);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.14);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.85rem;
+      padding: 0;
+      transition: all 0.15s ease;
+    }
+    .mem-icon-btn:hover {
+      transform: scale(1.08);
+      background: rgba(25, 30, 42, 0.95);
+      border-color: var(--accent);
+    }
+    .mem-icon-btn.danger:hover {
+      border-color: var(--red);
+      background: rgba(255, 69, 58, 0.25);
+    }
+    .mem-source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .mem-source-badge.shortcut {
+      background: rgba(48, 209, 88, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(48, 209, 88, 0.3);
+    }
+    .mem-source-badge.obex {
+      background: rgba(10, 132, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(10, 132, 255, 0.3);
+    }
+    .mem-source-badge.upload {
+      background: rgba(191, 90, 242, 0.15);
+      color: #bf5af2;
+      border: 1px solid rgba(191, 90, 242, 0.3);
+    }
+    .mem-thumb-item {
+      position: relative;
+      width: 68px;
+      height: 52px;
+      border-radius: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      flex-shrink: 0;
+      border: 2px solid transparent;
+      transition: all 0.2s ease;
+      background: #000;
+    }
+    .mem-thumb-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .mem-thumb-item:hover {
+      transform: translateY(-2px);
+    }
+    .mem-thumb-item.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(10, 132, 255, 0.5);
+    }
+    .mem-dropzone {
+      border: 1.5px dashed rgba(255,255,255,0.18);
+      border-radius: 14px;
+      padding: 14px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(255,255,255,0.02);
+      margin-bottom: 12px;
+    }
+    .mem-dropzone:hover, .mem-dropzone.dragover {
+      border-color: var(--accent);
+      background: rgba(10, 132, 255, 0.08);
+    }
+    .lumo-modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      animation: fadeIn 0.2s ease;
+    }
+    .lumo-modal-card {
+      background: #141721;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 24px;
+      max-width: 440px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 22px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+      animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .modal-tab-bar {
+      display: flex;
+      background: rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 3px;
+      margin: 14px 0;
+      gap: 4px;
+    }
+    .modal-tab-btn {
+      flex: 1;
+      font-size: 0.76rem;
+      padding: 8px 4px;
+      border-radius: 9px;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .modal-tab-btn.active {
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+    }
+    .code-pill {
+      background: rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      color: #00e5ff;
+      word-break: break-all;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .step-badge {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   </style>
 </head>
 <body>
@@ -638,75 +839,117 @@
     <div class="card-title">
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-size:1.1rem;">🖼️</span>
-        <span style="color:#fff; font-weight:700;">Memories Photo Frame</span>
+        <span style="color:#fff; font-weight:700;">Memories Frame</span>
+        <span id="memDeskLiveBadge" class="badge" style="display:none; font-size:0.68rem; padding:3px 8px; background:rgba(0,255,102,0.15); color:var(--green); border-color:rgba(0,255,102,0.3);">● ON DESK</span>
       </div>
-      <span id="memCountBadge" class="badge" style="font-size:0.75rem; background:rgba(0,229,255,0.12); color:var(--accent);">0 Photos</span>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button onclick="openShortcutModal()" style="padding:4px 9px; font-size:0.72rem; border-radius:12px; background:linear-gradient(135deg, rgba(10,132,255,0.25), rgba(48,209,88,0.2)); border:1px solid rgba(0,229,255,0.3); color:#fff; display:flex; align-items:center; gap:4px; cursor:pointer;">
+          <span>📱</span> iOS Shortcuts
+        </button>
+        <button onclick="toggleMemSettings()" class="mem-icon-btn" title="Frame Settings" style="width:28px; height:28px; font-size:0.75rem;">⚙️</button>
+      </div>
     </div>
 
-    <!-- Active Photo Preview -->
-    <div style="position:relative; width:100%; aspect-ratio:4/3; background:#000; border-radius:14px; overflow:hidden; border:1px solid var(--card-border); margin-bottom:12px; display:flex; align-items:center; justify-content:center;">
-      <img id="memCurrentImg" src="" style="width:100%; height:100%; object-fit:cover; display:none;" alt="Memory">
-      <div id="memEmptyPlaceholder" style="text-align:center; color:var(--muted); padding:20px;">
-        <div style="font-size:2rem; margin-bottom:6px;">📷</div>
-        <div style="font-weight:600; color:#fff;">No memories in gallery yet</div>
-        <div style="font-size:0.78rem; margin-top:4px;">Share a photo via Bluetooth or upload below!</div>
+    <!-- Active Photo Hero Box with Hover Overlay -->
+    <div id="memHeroBox" class="mem-hero">
+      <img id="memCurrentImg" src="" style="width:100%; height:100%; object-fit:cover; display:none; cursor:pointer;" alt="Memory" onclick="openMemoryLightbox()">
+      
+      <!-- Top Action Floating Pills -->
+      <div id="memOverlayActions" class="mem-overlay-actions" style="display:none;">
+        <button onclick="openMemoryLightbox()" class="mem-icon-btn" title="Fullscreen Lightbox">🔍</button>
+        <button onclick="downloadCurrentMemory()" class="mem-icon-btn" title="Download">⬇️</button>
+        <button onclick="deleteCurrentMemory()" class="mem-icon-btn danger" title="Delete Photo">🗑️</button>
       </div>
-      <div id="memCaptionBar" style="display:none; position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(0,0,0,0.85) 40%, rgba(0,0,0,0.95)); padding:10px 12px; justify-content:space-between; align-items:flex-end;">
+
+      <!-- Empty State Placeholder -->
+      <div id="memEmptyPlaceholder" style="text-align:center; color:var(--muted); padding:28px 20px;">
+        <div style="font-size:2.4rem; margin-bottom:8px; filter:drop-shadow(0 0 12px rgba(10,132,255,0.4));">📷</div>
+        <div style="font-weight:700; color:#fff; font-size:1.05rem;">No Memories Ingested Yet</div>
+        <div style="font-size:0.8rem; margin-top:6px; max-width:270px; line-height:1.45;">Drop photos here, share via Bluetooth, or tap <b>iOS Shortcuts</b> above to beam from your iPhone.</div>
+      </div>
+
+      <!-- Bottom Glass Caption Bar -->
+      <div id="memCaptionBar" style="display:none; position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(7,9,14,0.75) 30%, rgba(7,9,14,0.95)); padding:12px 14px; justify-content:space-between; align-items:flex-end; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);">
         <div>
-          <div id="memCaptionText" style="font-size:0.85rem; font-weight:700; color:#fff;">-</div>
-          <div id="memSourceText" style="font-size:0.7rem; color:var(--muted);">via Bluetooth OBEX</div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <div id="memCaptionText" style="font-size:0.95rem; font-weight:700; color:#fff;">-</div>
+            <span id="memIndexBadge" style="font-size:0.68rem; color:var(--muted); background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:6px;">1/1</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span id="memSourceBadge" class="mem-source-badge upload">via Web Upload</span>
+            <span id="memDateText" style="font-size:0.7rem; color:var(--muted);">Today</span>
+          </div>
         </div>
-        <button onclick="deleteCurrentMemory()" class="danger" style="padding:4px 8px; font-size:0.75rem; border-radius:8px;">Delete</button>
+        <button onclick="pushMemoryToDisplay()" class="primary" style="padding:6px 12px; font-size:0.8rem; border-radius:10px; display:flex; align-items:center; gap:5px; box-shadow:0 0 14px rgba(10,132,255,0.4);">
+          <span>📺</span> Display
+        </button>
+      </div>
+
+      <!-- Drag & Drop Dropzone Overlay indicator -->
+      <div id="memDragOverlay" style="display:none; position:absolute; inset:0; background:rgba(10,132,255,0.2); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); border:2px dashed var(--accent); border-radius:16px; align-items:center; justify-content:center; flex-direction:column; z-index:10; pointer-events:none;">
+        <div style="font-size:2rem; margin-bottom:6px;">📥</div>
+        <div style="font-weight:700; color:#fff;">Drop to Beam to LUMO Frame</div>
       </div>
     </div>
 
-    <!-- Gallery Navigation & Push Controls -->
+    <!-- Quick Navigation Bar -->
     <div class="btn-group" style="margin-bottom:12px;">
-      <button onclick="prevMemory()" style="padding:8px;">◀ Prev</button>
-      <button onclick="pushMemoryToDisplay()" class="primary" style="padding:8px;">Show on LUMO 📺</button>
-      <button onclick="nextMemory()" style="padding:8px;">Next ▶</button>
+      <button onclick="prevMemory()" style="padding:9px;">◀ Prev</button>
+      <button onclick="pushMemoryToDisplay()" class="primary" style="padding:9px; background:linear-gradient(135deg, var(--accent), #00d2ff);">Stream to LUMO 📺</button>
+      <button onclick="nextMemory()" style="padding:9px;">Next ▶</button>
     </div>
 
-    <!-- Thumbnails Strip -->
+    <!-- Thumbnails Filmstrip Carousel -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <span style="font-size:0.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Gallery Filmstrip</span>
+      <span id="memCountBadge" class="badge" style="font-size:0.72rem; padding:2px 8px; background:rgba(0,229,255,0.1); color:var(--accent);">0 Photos</span>
+    </div>
     <div id="memThumbsStrip" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; margin-bottom:12px; scrollbar-width:thin;">
     </div>
 
-    <!-- Ingestion Options (Bluetooth & Direct Web Upload) -->
-    <div style="background:rgba(255,255,255,0.04); border:1px solid var(--card-border); border-radius:12px; padding:12px; margin-bottom:12px;">
-      <div style="font-size:0.8rem; font-weight:700; margin-bottom:8px; color:#fff; display:flex; justify-content:space-between; align-items:center;">
-        <span>Add Memories</span>
-        <label for="memFileInput" style="cursor:pointer; background:var(--accent); color:#fff; padding:4px 10px; border-radius:8px; font-size:0.75rem; font-weight:600;">
-          📤 Upload Photo
-        </label>
-        <input type="file" id="memFileInput" accept="image/*" style="display:none;" onchange="uploadMemoryPhoto(this.files[0])">
+    <!-- Drag & Drop / Direct Multi-Photo Ingestion Area -->
+    <div id="memDropzone" class="mem-dropzone" onclick="document.getElementById('memFileInput').click()">
+      <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px;">
+        <span style="font-size:1.2rem;">📤</span>
+        <span style="font-weight:600; color:#fff; font-size:0.85rem;">Add Photos to Frame</span>
       </div>
-      <div style="font-size:0.75rem; color:var(--muted); line-height:1.45;">
-        📱 <b>Android / PC:</b> Select photo &gt; Tap <i>Share</i> &gt; <i>Bluetooth</i> &gt; Select <b>LUMO Companion</b>.<br>
-        🍏 <b>iPhone / Safari:</b> Tap <b>Upload Photo</b> above to save directly to your desk frame.
+      <div style="font-size:0.74rem; color:var(--muted); line-height:1.4;">
+        Drag &amp; drop images here or <b>browse files</b> (JPEG, PNG, HEIC).<br>
+        Multiple files supported &bull; Auto-optimized to 320&times;240 for LCD.
       </div>
+      <input type="file" id="memFileInput" accept="image/*" multiple style="display:none;" onchange="handleFileInput(this.files)">
     </div>
 
-    <!-- Auto-Rotate & Calibration Settings -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:0.82rem;">
-      <span style="color:#eee;">Ambient Idle Auto-Rotate (after 2m)</span>
-      <label class="toggle-switch">
-        <input type="checkbox" id="memAutoRotateToggle" onchange="toggleMemAutoRotate(this.checked)">
-        <span class="slider-toggle"></span>
-      </label>
+    <!-- Optional Custom Caption Bar -->
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <input type="text" id="memCaptionInput" placeholder="Custom photo caption (optional, e.g. Vacation)..." style="flex:1; background:rgba(255,255,255,0.06); border:1px solid var(--card-border); color:#fff; border-radius:10px; padding:7px 10px; font-size:0.78rem; outline:none;">
+      <button onclick="uploadWithCaption()" style="padding:7px 12px; font-size:0.78rem; border-radius:10px; background:rgba(255,255,255,0.1);">Upload</button>
     </div>
-    <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem; color:var(--muted);">
-      <span>Change Interval:</span>
-      <select id="memIntervalSelect" onchange="changeMemInterval(this.value)" style="background:rgba(255,255,255,0.08); border:1px solid var(--card-border); color:#fff; border-radius:8px; padding:4px 8px; font-size:0.75rem; outline:none;">
-        <option value="10">10 seconds</option>
-        <option value="20" selected>20 seconds</option>
-        <option value="30">30 seconds</option>
-        <option value="60">1 minute</option>
-        <option value="300">5 minutes</option>
-      </select>
-    </div>
-    <div style="display:flex; gap:8px; margin-top:10px;">
-      <button onclick="toggleMemSwap()" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);">Swap Bytes</button>
-      <button onclick="toggleMemBgr()" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);">RGB/BGR</button>
+
+    <!-- Collapsible Advanced Frame Settings -->
+    <div id="memSettingsTray" style="display:none; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:12px; margin-bottom:8px;">
+      <div style="font-size:0.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; margin-bottom:10px; letter-spacing:0.5px;">Display Configuration</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:0.82rem;">
+        <span style="color:#eee;">Ambient Idle Auto-Rotate (after 2m)</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="memAutoRotateToggle" onchange="toggleMemAutoRotate(this.checked)">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem; color:var(--muted); margin-bottom:10px;">
+        <span>Rotation Interval:</span>
+        <select id="memIntervalSelect" onchange="changeMemInterval(this.value)" style="background:rgba(255,255,255,0.08); border:1px solid var(--card-border); color:#fff; border-radius:8px; padding:4px 8px; font-size:0.75rem; outline:none;">
+          <option value="10">10 seconds</option>
+          <option value="20" selected>20 seconds</option>
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="300">5 minutes</option>
+        </select>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button onclick="toggleMemSwap()" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);">Swap Bytes</button>
+        <button onclick="toggleMemBgr()" style="flex:1; padding:6px; font-size:0.75rem; background:rgba(255,255,255,0.06);">RGB/BGR</button>
+      </div>
     </div>
   </div>
 
@@ -756,6 +999,131 @@
       <button onclick="setEmotion('BORED')">Bored</button>
       <button onclick="setEmotion('NORMAL')">Normal</button>
     </div>
+</div>
+
+<!-- Apple Shortcuts Setup Modal -->
+<div id="shortcutModal" class="lumo-modal-backdrop" onclick="if(event.target===this)closeShortcutModal()">
+  <div class="lumo-modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:1.3rem;">📱</span>
+        <h2 style="font-size:1.15rem; font-weight:700; color:#fff;">Apple Shortcuts for LUMO</h2>
+      </div>
+      <button onclick="closeShortcutModal()" style="background:none; border:none; color:var(--muted); font-size:1.3rem; cursor:pointer; padding:0 4px;">&times;</button>
+    </div>
+
+    <div style="font-size:0.8rem; color:var(--muted); line-height:1.45; margin-bottom:14px;">
+      Send photos directly from your iPhone/iPad Photos app in 1 tap, or automate sync when charging at night.
+    </div>
+
+    <!-- Quick Copy Endpoint URL -->
+    <div style="margin-bottom:14px;">
+      <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">Your LUMO Shortcut Ingestion URL</div>
+      <div class="code-pill">
+        <span id="shortcutUrlText">https://.../api/memories/shortcut</span>
+        <button onclick="copyShortcutUrl()" id="btnCopyShortcutUrl" style="padding:4px 8px; font-size:0.72rem; background:var(--accent); border:none; border-radius:6px; color:#fff; cursor:pointer;">Copy</button>
+      </div>
+    </div>
+
+    <!-- Modal Tabs -->
+    <div class="modal-tab-bar">
+      <button class="modal-tab-btn active" id="tabBtnShare" onclick="switchShortcutTab('share')">⚡ 1-Tap Share Sheet</button>
+      <button class="modal-tab-btn" id="tabBtnAuto" onclick="switchShortcutTab('auto')">🌙 Nightly Routine</button>
+      <button class="modal-tab-btn" id="tabBtnCurl" onclick="switchShortcutTab('curl')">🧪 cURL / API</button>
+    </div>
+
+    <!-- Tab 1: Share Sheet -->
+    <div id="shortcutTabShare" style="font-size:0.8rem; line-height:1.55;">
+      <div style="margin-bottom:10px; color:#ddd;">Configure an iPhone Share Sheet action to send any photo to LUMO in 1 tap:</div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">1</div>
+          <div>Open <b>Shortcuts</b> app on iPhone &gt; Tap <b>+</b> &gt; Name it <b>Send to LUMO</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">2</div>
+          <div>Tap the <b>(i) Details</b> icon at bottom &gt; Turn ON <b>Show in Share Sheet</b> &gt; Select <b>Images</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">3</div>
+          <div>Add Action: <b>Convert Image</b> &gt; Set input to <i>Shortcut Input</i> and format to <b>JPEG</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">4</div>
+          <div>Add Action: <b>Get Contents of URL</b>:
+            <ul style="margin:4px 0 0 16px; color:var(--muted); font-size:0.76rem;">
+              <li>URL: <span style="color:#00e5ff;">Paste the copied URL above</span></li>
+              <li>Method: <b>POST</b></li>
+              <li>Request Body: <b>File</b> &gt; select <i>Converted Image</i></li>
+            </ul>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">5</div>
+          <div>(Optional) Add Action: <b>Show Notification</b> &gt; <i>"✨ Sent to LUMO Frame!"</i></div>
+        </div>
+      </div>
+      <div style="background:rgba(48,209,88,0.1); border:1px solid rgba(48,209,88,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85e89d;">
+        🎉 <b>Ready!</b> Open any photo in the Photos app &gt; Tap <i>Share</i> &gt; Tap <i>Send to LUMO</i>. The photo will instantly appear on your desk!
+      </div>
+    </div>
+
+    <!-- Tab 2: Nightly Routine -->
+    <div id="shortcutTabAuto" style="display:none; font-size:0.8rem; line-height:1.55;">
+      <div style="margin-bottom:10px; color:#ddd;">Automatically sync today's favorite photo when placing iPhone on charger:</div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">1</div>
+          <div>Open <b>Shortcuts</b> app &gt; Tap <b>Automation</b> tab at the bottom &gt; Tap <b>+</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">2</div>
+          <div>Choose <b>Charger</b> &gt; <i>When iPhone is Connected to Power</i> (or <i>At 10:00 PM</i>) &gt; Select <b>Run Immediately</b>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">3</div>
+          <div>Add Action: <b>Find Photos</b> &gt; Filter where <i>Is a Favorite is Yes</i> &amp; <i>Date Taken is Today</i>.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">4</div>
+          <div>Add Action: <b>Get Item from List</b> (First Item) &gt; <b>Convert Image</b> to JPEG.</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start;">
+          <div class="step-badge">5</div>
+          <div>Add Action: <b>Get Contents of URL</b> &gt; POST to the shortcut URL above.</div>
+        </div>
+      </div>
+      <div style="background:rgba(10,132,255,0.1); border:1px solid rgba(10,132,255,0.25); border-radius:10px; padding:10px; margin-top:12px; font-size:0.75rem; color:#85d7ff;">
+        🌙 <b>Autonomous Desk Frame:</b> Every night when your phone docks to charge, LUMO will update with your favorite moment from the day!
+      </div>
+    </div>
+
+    <!-- Tab 3: cURL / API -->
+    <div id="shortcutTabCurl" style="display:none; font-size:0.8rem; line-height:1.55;">
+      <div style="margin-bottom:8px; color:#ddd;">Direct cURL or programmatic upload:</div>
+      <div class="code-pill" style="margin-bottom:10px;">
+        <span id="curlExampleText">curl -k -X POST -F "file=@photo.jpg" https://.../api/memories/shortcut</span>
+        <button onclick="copyCurlExample()" id="btnCopyCurl" style="padding:4px 8px; font-size:0.72rem; background:var(--accent); border:none; border-radius:6px; color:#fff; cursor:pointer;">Copy</button>
+      </div>
+      <button onclick="testShortcutEndpoint()" class="primary" style="width:100%; padding:9px; font-size:0.8rem; margin-top:6px;">🧪 Run Test Upload via Browser</button>
+      <div id="testUploadResult" style="margin-top:8px; font-size:0.75rem; color:var(--muted); display:none;"></div>
+    </div>
+
+    <div style="margin-top:16px; text-align:right;">
+      <button onclick="closeShortcutModal()" style="padding:7px 14px; font-size:0.8rem; border-radius:10px;">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fullscreen Lightbox Modal -->
+<div id="memLightbox" class="lumo-modal-backdrop" onclick="if(event.target===this)closeMemoryLightbox()">
+  <div style="position:relative; max-width:92vw; max-height:92vh; display:flex; flex-direction:column; align-items:center;">
+    <button onclick="closeMemoryLightbox()" style="position:absolute; top:-38px; right:0; background:rgba(255,255,255,0.1); border:none; border-radius:50%; width:32px; height:32px; color:#fff; font-size:1.2rem; cursor:pointer;">&times;</button>
+    <img id="lightboxImg" src="" style="max-width:100%; max-height:75vh; border-radius:14px; border:1px solid rgba(255,255,255,0.15); box-shadow:0 12px 40px rgba(0,0,0,0.8); object-fit:contain;">
+    <div style="margin-top:12px; text-align:center;">
+      <div id="lightboxCaption" style="font-weight:700; color:#fff; font-size:1.05rem;">-</div>
+      <div id="lightboxSource" style="font-size:0.78rem; color:var(--muted); margin-top:2px;">-</div>
+    </div>
   </div>
 </div>
 
@@ -771,6 +1139,10 @@
       const lbl = document.getElementById("lcdModeLabel");
       if (lbl) lbl.textContent = mode;
     }
+    const liveBadge = document.getElementById("memDeskLiveBadge");
+    if (liveBadge) liveBadge.style.display = (mode === "MEMORY") ? "inline-flex" : "none";
+    const hero = document.getElementById("memHeroBox");
+    if (hero) hero.classList.toggle("live-glow", mode === "MEMORY");
     await postApi("/api/screen", { screen: mode });
   }
 
@@ -806,6 +1178,10 @@
       if (data.screen && data.screen !== activeScreenMode) {
         activeScreenMode = data.screen;
         updateScreenButtons(data.screen);
+        const liveBadge = document.getElementById("memDeskLiveBadge");
+        if (liveBadge) liveBadge.style.display = (activeScreenMode === "MEMORY") ? "inline-flex" : "none";
+        const hero = document.getElementById("memHeroBox");
+        if (hero) hero.classList.toggle("live-glow", activeScreenMode === "MEMORY");
       }
 
       if (data.sage) window.sageStatus = data.sage;
@@ -1664,6 +2040,12 @@
       const intervalSel = document.getElementById("memIntervalSelect");
       if (intervalSel) intervalSel.value = data.interval_sec || 20;
 
+      const liveBadge = document.getElementById("memDeskLiveBadge");
+      if (liveBadge) liveBadge.style.display = (activeScreenMode === "MEMORY") ? "inline-flex" : "none";
+
+      const hero = document.getElementById("memHeroBox");
+      if (hero) hero.classList.toggle("live-glow", activeScreenMode === "MEMORY");
+
       renderMemoryPreview();
       renderMemoryThumbs();
     } catch (e) {
@@ -1676,24 +2058,59 @@
     const emptyEl = document.getElementById("memEmptyPlaceholder");
     const capBar = document.getElementById("memCaptionBar");
     const capText = document.getElementById("memCaptionText");
-    const srcText = document.getElementById("memSourceText");
+    const srcBadge = document.getElementById("memSourceBadge");
+    const dateText = document.getElementById("memDateText");
+    const indexBadge = document.getElementById("memIndexBadge");
+    const overlayActions = document.getElementById("memOverlayActions");
 
     if (!cachedMemories.length) {
       if (imgEl) imgEl.style.display = "none";
       if (emptyEl) emptyEl.style.display = "block";
       if (capBar) capBar.style.display = "none";
+      if (overlayActions) overlayActions.style.display = "none";
       return;
     }
 
-    const cur = cachedMemories[currentMemoryIndex] || cachedMemories[0];
+    if (currentMemoryIndex >= cachedMemories.length) {
+      currentMemoryIndex = Math.max(0, cachedMemories.length - 1);
+    }
+
+    const cur = cachedMemories[currentMemoryIndex];
+    if (!cur) return;
+
     if (imgEl) {
       imgEl.src = cur.url;
       imgEl.style.display = "block";
     }
     if (emptyEl) emptyEl.style.display = "none";
     if (capBar) capBar.style.display = "flex";
-    if (capText) capText.textContent = cur.caption || "Photo";
-    if (srcText) srcText.textContent = cur.source === "obex" ? "via Bluetooth OBEX" : "via Web Upload";
+    if (overlayActions) overlayActions.style.display = "flex";
+
+    if (capText) capText.textContent = cur.caption || "Memory Photo";
+    if (indexBadge) indexBadge.textContent = `${currentMemoryIndex + 1} / ${cachedMemories.length}`;
+
+    if (srcBadge) {
+      const src = (cur.source || "").toLowerCase();
+      if (src === "apple_shortcut" || src === "shortcut") {
+        srcBadge.className = "mem-source-badge shortcut";
+        srcBadge.textContent = "🍏 iOS Shortcut";
+      } else if (src === "obex") {
+        srcBadge.className = "mem-source-badge obex";
+        srcBadge.textContent = "📡 Bluetooth";
+      } else {
+        srcBadge.className = "mem-source-badge upload";
+        srcBadge.textContent = "🌐 Web Upload";
+      }
+    }
+
+    if (dateText && cur.added_at) {
+      try {
+        const d = new Date(cur.added_at);
+        dateText.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch {
+        dateText.textContent = "";
+      }
+    }
   }
 
   function renderMemoryThumbs() {
@@ -1701,16 +2118,16 @@
     if (!strip) return;
     strip.innerHTML = "";
     cachedMemories.forEach((m, idx) => {
-      const thumb = document.createElement("img");
-      thumb.src = m.thumb_url;
-      thumb.style.width = "64px";
-      thumb.style.height = "48px";
-      thumb.style.objectFit = "cover";
-      thumb.style.borderRadius = "8px";
-      thumb.style.cursor = "pointer";
-      thumb.style.flexShrink = "0";
-      thumb.style.border = (idx === currentMemoryIndex) ? "2px solid var(--accent)" : "1px solid rgba(255,255,255,0.1)";
-      thumb.onclick = async () => {
+      const item = document.createElement("div");
+      item.className = "mem-thumb-item" + (idx === currentMemoryIndex ? " active" : "");
+      item.title = m.caption || `Photo ${idx + 1}`;
+
+      const img = document.createElement("img");
+      img.src = m.thumb_url;
+      img.alt = m.caption || "";
+      item.appendChild(img);
+
+      item.onclick = async () => {
         currentMemoryIndex = idx;
         renderMemoryPreview();
         renderMemoryThumbs();
@@ -1718,8 +2135,14 @@
           await postApi("/api/memories/push");
         }
       };
-      strip.appendChild(thumb);
+      strip.appendChild(item);
     });
+
+    // Auto-scroll active thumbnail into view
+    const activeThumb = strip.querySelector(".mem-thumb-item.active");
+    if (activeThumb) {
+      activeThumb.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    }
   }
 
   async function nextMemory() {
@@ -1750,36 +2173,92 @@
     } else {
       await postApi("/api/memories/push");
     }
+    const liveBadge = document.getElementById("memDeskLiveBadge");
+    if (liveBadge) liveBadge.style.display = "inline-flex";
+    const hero = document.getElementById("memHeroBox");
+    if (hero) hero.classList.add("live-glow");
   }
 
   async function deleteCurrentMemory() {
     if (!cachedMemories.length) return;
     const cur = cachedMemories[currentMemoryIndex];
     if (!cur) return;
-    if (!confirm("Remove this memory photo from LUMO?")) return;
+    if (!confirm(`Delete memory "${cur.caption || 'photo'}" from LUMO?`)) return;
     await fetch(`/api/memories/${cur.id}`, { method: "DELETE" });
     await fetchMemories();
   }
 
-  async function uploadMemoryPhoto(file) {
-    if (!file) return;
-    const fd = new FormData();
-    fd.append("file", file);
-    try {
-      const res = await fetch("/api/memories/upload", {
-        method: "POST",
-        body: fd
-      });
-      const data = await res.json();
-      if (data.ok) {
-        await fetchMemories();
-        const input = document.getElementById("memFileInput");
-        if (input) input.value = "";
-      } else {
-        alert("Upload failed: " + (data.detail || "Unknown error"));
+  function downloadCurrentMemory() {
+    if (!cachedMemories.length) return;
+    const cur = cachedMemories[currentMemoryIndex];
+    if (!cur) return;
+    const a = document.createElement("a");
+    a.href = cur.url;
+    a.download = (cur.caption || cur.id) + ".jpg";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  async function uploadFiles(files, customCaption) {
+    if (!files || !files.length) return;
+    const toast = document.createElement("div");
+    toast.style.cssText = "position:fixed; bottom:20px; right:20px; background:#141721; border:1px solid rgba(0,229,255,0.4); border-radius:12px; padding:12px 18px; color:#fff; font-size:0.82rem; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.6); display:flex; align-items:center; gap:8px;";
+    toast.innerHTML = `<span>⏳</span> Ingesting ${files.length} photo${files.length > 1 ? 's' : ''}...`;
+    document.body.appendChild(toast);
+
+    let successCount = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fd = new FormData();
+      fd.append("file", file);
+      if (customCaption) fd.append("caption", customCaption);
+
+      try {
+        const res = await fetch("/api/memories/upload", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.ok) successCount++;
+      } catch (err) {
+        console.error("Upload error:", err);
       }
-    } catch (e) {
-      alert("Error uploading image: " + e);
+    }
+
+    toast.innerHTML = `<span>✅</span> Ingested ${successCount} photo${successCount > 1 ? 's' : ''}!`;
+    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2500);
+
+    const input = document.getElementById("memFileInput");
+    if (input) input.value = "";
+    const capInput = document.getElementById("memCaptionInput");
+    if (capInput) capInput.value = "";
+
+    await fetchMemories();
+  }
+
+  function handleFileInput(files) {
+    uploadFiles(files, null);
+  }
+
+  function uploadWithCaption() {
+    const input = document.getElementById("memFileInput");
+    const capInput = document.getElementById("memCaptionInput");
+    const caption = capInput ? capInput.value.trim() : "";
+
+    if (input && input.files && input.files.length) {
+      uploadFiles(input.files, caption);
+    } else {
+      // Trigger file selector
+      input.onchange = () => {
+        uploadFiles(input.files, caption);
+        input.onchange = (e) => handleFileInput(e.target.files);
+      };
+      input.click();
+    }
+  }
+
+  function toggleMemSettings() {
+    const tray = document.getElementById("memSettingsTray");
+    if (tray) {
+      tray.style.display = (tray.style.display === "none" || !tray.style.display) ? "block" : "none";
     }
   }
 
@@ -1803,6 +2282,181 @@
     const data = await res.json();
     await postApi("/api/memories/config", { bgr_mode: !data.bgr_mode });
     if (activeScreenMode === "MEMORY") await postApi("/api/memories/push");
+  }
+
+  // --- Drag and Drop Handlers ---
+  const heroBox = document.getElementById("memHeroBox");
+  const dragOverlay = document.getElementById("memDragOverlay");
+  const dropzone = document.getElementById("memDropzone");
+
+  [heroBox, dropzone].forEach(el => {
+    if (!el) return;
+    el.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dragOverlay) dragOverlay.style.display = "flex";
+      if (heroBox) heroBox.classList.add("drag-active");
+      if (dropzone) dropzone.classList.add("dragover");
+    });
+
+    el.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    el.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.target === el || e.target === dragOverlay) {
+        if (dragOverlay) dragOverlay.style.display = "none";
+        if (heroBox) heroBox.classList.remove("drag-active");
+        if (dropzone) dropzone.classList.remove("dragover");
+      }
+    });
+
+    el.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dragOverlay) dragOverlay.style.display = "none";
+      if (heroBox) heroBox.classList.remove("drag-active");
+      if (dropzone) dropzone.classList.remove("dragover");
+
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) {
+        uploadFiles(dt.files, null);
+      }
+    });
+  });
+
+  // --- Fullscreen Lightbox ---
+  function openMemoryLightbox() {
+    if (!cachedMemories.length) return;
+    const cur = cachedMemories[currentMemoryIndex];
+    if (!cur) return;
+    const modal = document.getElementById("memLightbox");
+    const img = document.getElementById("lightboxImg");
+    const cap = document.getElementById("lightboxCaption");
+    const src = document.getElementById("lightboxSource");
+
+    if (img) img.src = cur.url;
+    if (cap) cap.textContent = cur.caption || "Memory Photo";
+    if (src) src.textContent = (cur.source === "apple_shortcut") ? "Ingested via Apple Shortcuts Automation" : (cur.source === "obex" ? "Received via Bluetooth OBEX" : "Uploaded via Dashboard");
+    if (modal) modal.style.display = "flex";
+  }
+
+  function closeMemoryLightbox() {
+    const modal = document.getElementById("memLightbox");
+    if (modal) modal.style.display = "none";
+  }
+
+  // --- Apple Shortcuts Modal Logic ---
+  function openShortcutModal() {
+    const modal = document.getElementById("shortcutModal");
+    const urlEl = document.getElementById("shortcutUrlText");
+    const curlEl = document.getElementById("curlExampleText");
+
+    const fullUrl = `${window.location.protocol}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '80')}/api/memories/shortcut`;
+    if (urlEl) urlEl.textContent = fullUrl;
+    if (curlEl) curlEl.textContent = `curl -k -X POST -F "file=@photo.jpg" "${fullUrl}"`;
+
+    if (modal) modal.style.display = "flex";
+  }
+
+  function closeShortcutModal() {
+    const modal = document.getElementById("shortcutModal");
+    if (modal) modal.style.display = "none";
+  }
+
+  function copyShortcutUrl() {
+    const urlEl = document.getElementById("shortcutUrlText");
+    if (!urlEl) return;
+    navigator.clipboard.writeText(urlEl.textContent).then(() => {
+      const btn = document.getElementById("btnCopyShortcutUrl");
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = "Copied! ✓";
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }
+    });
+  }
+
+  function copyCurlExample() {
+    const curlEl = document.getElementById("curlExampleText");
+    if (!curlEl) return;
+    navigator.clipboard.writeText(curlEl.textContent).then(() => {
+      const btn = document.getElementById("btnCopyCurl");
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = "Copied! ✓";
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }
+    });
+  }
+
+  function switchShortcutTab(tab) {
+    const tabs = ["share", "auto", "curl"];
+    tabs.forEach(t => {
+      const btn = document.getElementById("tabBtn" + t.charAt(0).toUpperCase() + t.slice(1));
+      const pane = document.getElementById("shortcutTab" + t.charAt(0).toUpperCase() + t.slice(1));
+      if (btn) btn.classList.toggle("active", t === tab);
+      if (pane) pane.style.display = (t === tab) ? "block" : "none";
+    });
+  }
+
+  async function testShortcutEndpoint() {
+    const resBox = document.getElementById("testUploadResult");
+    if (resBox) {
+      resBox.style.display = "block";
+      resBox.style.color = "var(--muted)";
+      resBox.textContent = "Generating test pattern and uploading to /api/memories/shortcut...";
+    }
+
+    try {
+      // Create a test 320x240 gradient canvas
+      const c = document.createElement("canvas");
+      c.width = 320; c.height = 240;
+      const ctx = c.getContext("2d");
+      const grad = ctx.createLinearGradient(0, 0, 320, 240);
+      grad.addColorStop(0, "#00E5FF");
+      grad.addColorStop(0.5, "#7928CA");
+      grad.addColorStop(1, "#FF0080");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 320, 240);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 22px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("iOS Shortcut Test", 160, 110);
+      ctx.font = "14px monospace";
+      ctx.fillText(new Date().toLocaleTimeString(), 160, 140);
+
+      const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
+      const fd = new FormData();
+      fd.append("file", blob, "shortcut_test.jpg");
+      fd.append("caption", "Shortcut Test");
+
+      const res = await fetch("/api/memories/shortcut", { method: "POST", body: fd });
+      const data = await res.json();
+
+      if (data.ok) {
+        if (resBox) {
+          resBox.style.color = "var(--green)";
+          resBox.textContent = "✓ Success! " + (data.message || "Saved and streamed to LUMO!");
+        }
+        await fetchMemories();
+        if (typeof switchDisplay === "function") switchDisplay("MEMORY");
+      } else {
+        if (resBox) {
+          resBox.style.color = "var(--red)";
+          resBox.textContent = "Failed: " + (data.detail || "Server error");
+        }
+      }
+    } catch (err) {
+      if (resBox) {
+        resBox.style.color = "var(--red)";
+        resBox.textContent = "Error: " + err;
+      }
+    }
   }
 
   // ==============================================================================
