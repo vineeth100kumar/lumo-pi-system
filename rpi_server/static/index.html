@@ -421,6 +421,54 @@
       border-color: var(--accent);
       box-shadow: 0 0 12px rgba(10, 132, 255, 0.5);
     }
+    .mem-grid-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .mem-grid-card:hover {
+      border-color: rgba(0, 229, 255, 0.4);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+    .mem-grid-card.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 14px rgba(0, 229, 255, 0.35);
+    }
+    .mem-grid-card img {
+      width: 100%;
+      height: 90px;
+      object-fit: cover;
+      cursor: pointer;
+      display: block;
+    }
+    .mem-grid-info {
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 0.72rem;
+    }
+    .mem-grid-title {
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mem-grid-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
     .mem-dropzone {
       border: 1.5px dashed rgba(255,255,255,0.18);
       border-radius: 14px;
@@ -899,12 +947,24 @@
       <button onclick="nextMemory()" style="padding:9px;">Next ▶</button>
     </div>
 
-    <!-- Thumbnails Filmstrip Carousel -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <span style="font-size:0.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Gallery Filmstrip</span>
-      <span id="memCountBadge" class="badge" style="font-size:0.72rem; padding:2px 8px; background:rgba(0,229,255,0.1); color:var(--accent);">0 Photos</span>
+    <!-- Thumbnails Filmstrip & Gallery Grid Header -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span style="font-size:0.75rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">All Memories</span>
+        <span id="memCountBadge" class="badge" style="font-size:0.72rem; padding:2px 8px; background:rgba(0,229,255,0.1); color:var(--accent);">0 / 20 Photos</span>
+      </div>
+      <div style="display:flex; background:rgba(255,255,255,0.06); border-radius:8px; padding:2px; gap:2px;">
+        <button id="btnViewFilmstrip" onclick="setMemViewMode('filmstrip')" style="padding:3px 7px; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.15); color:#fff; border:none; cursor:pointer;" title="Filmstrip view">🎞️ Strip</button>
+        <button id="btnViewGrid" onclick="setMemViewMode('grid')" style="padding:3px 7px; font-size:0.7rem; border-radius:6px; background:transparent; color:var(--muted); border:none; cursor:pointer;" title="Grid gallery view">▦ Grid</button>
+      </div>
     </div>
+
+    <!-- 1. Filmstrip Carousel View -->
     <div id="memThumbsStrip" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; margin-bottom:12px; scrollbar-width:thin;">
+    </div>
+
+    <!-- 2. Multi-Column Grid View (shows all photos side by side) -->
+    <div id="memGalleryGrid" style="display:none; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:10px; margin-bottom:14px; max-height: 380px; overflow-y:auto; padding-right:4px;">
     </div>
 
     <!-- Drag & Drop / Direct Multi-Photo Ingestion Area -->
@@ -2129,6 +2189,7 @@
 
       renderMemoryPreview();
       renderMemoryThumbs();
+      renderMemoryGrid();
     } catch (e) {
       console.error("fetchMemories error:", e);
     }
@@ -2217,6 +2278,7 @@
         currentMemoryIndex = idx;
         renderMemoryPreview();
         renderMemoryThumbs();
+        renderMemoryGrid();
         if (activeScreenMode === "MEMORY") {
           await postApi("/api/memories/push");
         }
@@ -2231,12 +2293,104 @@
     }
   }
 
+  function renderMemoryGrid() {
+    const grid = document.getElementById("memGalleryGrid");
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    if (!cachedMemories.length) {
+      grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:var(--muted); padding:24px; font-size:0.8rem;">No memories stored yet.</div>';
+      return;
+    }
+
+    cachedMemories.forEach((m, idx) => {
+      const card = document.createElement("div");
+      card.className = "mem-grid-card" + (idx === currentMemoryIndex ? " active" : "");
+
+      const isActive = (idx === currentMemoryIndex);
+      const isShortcut = (m.source === "apple_shortcut" || m.source === "shortcut");
+
+      card.innerHTML = `
+        <div style="position:relative;">
+          <img src="${m.thumb_url}" alt="${m.caption || ''}" onclick="selectMemoryIndex(${idx})">
+          ${isActive ? '<span style="position:absolute; top:4px; left:4px; font-size:0.58rem; font-weight:700; background:rgba(0,255,102,0.9); color:#000; padding:1px 5px; border-radius:4px;">● LIVE</span>' : ''}
+          <span style="position:absolute; bottom:4px; right:4px; font-size:0.58rem; background:rgba(0,0,0,0.7); color:#fff; padding:1px 4px; border-radius:3px;">#${idx + 1}</span>
+        </div>
+        <div class="mem-grid-info">
+          <div class="mem-grid-title" title="${m.caption || ''}">${m.caption || 'Memory Photo'}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.65rem; color:var(--muted); margin-top:2px;">
+            <span>${isShortcut ? '🍏 Shortcut' : '🌐 Web'}</span>
+            <span>${m.added_at ? new Date(m.added_at).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : ''}</span>
+          </div>
+          <div class="mem-grid-actions">
+            <button onclick="streamMemory(${idx})" style="padding:2px 7px; font-size:0.65rem; background:rgba(0,229,255,0.15); color:var(--accent); border-radius:4px; border:none; cursor:pointer;" title="Stream to screen">📺 Show</button>
+            <button onclick="deleteMemoryById('${m.id}')" style="padding:2px 7px; font-size:0.65rem; background:rgba(255,23,68,0.15); color:#ff1744; border-radius:4px; border:none; cursor:pointer;" title="Delete">🗑️</button>
+          </div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  function setMemViewMode(mode) {
+    const strip = document.getElementById("memThumbsStrip");
+    const grid = document.getElementById("memGalleryGrid");
+    const btnStrip = document.getElementById("btnViewFilmstrip");
+    const btnGrid = document.getElementById("btnViewGrid");
+
+    if (mode === "grid") {
+      if (strip) strip.style.display = "none";
+      if (grid) grid.style.display = "grid";
+      if (btnStrip) { btnStrip.style.background = "transparent"; btnStrip.style.color = "var(--muted)"; }
+      if (btnGrid) { btnGrid.style.background = "rgba(255,255,255,0.15)"; btnGrid.style.color = "#fff"; }
+    } else {
+      if (strip) strip.style.display = "flex";
+      if (grid) grid.style.display = "none";
+      if (btnStrip) { btnStrip.style.background = "rgba(255,255,255,0.15)"; btnStrip.style.color = "#fff"; }
+      if (btnGrid) { btnGrid.style.background = "transparent"; btnGrid.style.color = "var(--muted)"; }
+    }
+  }
+
+  async function selectMemoryIndex(idx) {
+    currentMemoryIndex = idx;
+    renderMemoryPreview();
+    renderMemoryThumbs();
+    renderMemoryGrid();
+  }
+
+  async function streamMemory(idx) {
+    currentMemoryIndex = idx;
+    renderMemoryPreview();
+    renderMemoryThumbs();
+    renderMemoryGrid();
+    if (activeScreenMode !== "MEMORY") {
+      await switchDisplay("MEMORY");
+    } else {
+      await postApi("/api/memories/push");
+    }
+  }
+
+  async function deleteMemoryById(id) {
+    if (!confirm("Delete this photo from LUMO?")) return;
+    try {
+      const res = await fetch("/api/memories/" + id, { method: "DELETE" });
+      const data = await res.json();
+      if (data.ok) {
+        await fetchMemories();
+      }
+    } catch (e) {
+      console.error("Delete error:", e);
+    }
+  }
+
+
   async function nextMemory() {
     const res = await postApi("/api/memories/next");
     if (res && res.index !== undefined) {
       currentMemoryIndex = res.index;
       renderMemoryPreview();
       renderMemoryThumbs();
+      renderMemoryGrid();
     } else {
       fetchMemories();
     }
@@ -2248,6 +2402,7 @@
       currentMemoryIndex = res.index;
       renderMemoryPreview();
       renderMemoryThumbs();
+      renderMemoryGrid();
     } else {
       fetchMemories();
     }

@@ -12,12 +12,17 @@ from PIL import Image, ImageOps, ImageEnhance
 logger = logging.getLogger("MemoriesService")
 
 class MemoriesService:
-    def __init__(self, base_dir: str = "static/memories"):
-        self.base_dir = base_dir
-        self.inbox_dir = os.path.join(base_dir, "inbox")
-        self.library_dir = os.path.join(base_dir, "library")
-        self.thumbs_dir = os.path.join(base_dir, "thumbs")
-        self.index_file = os.path.join(base_dir, "index.json")
+    def __init__(self, base_dir: Optional[str] = None):
+        if not base_dir:
+            server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            self.base_dir = os.path.join(server_dir, "static", "memories")
+        else:
+            self.base_dir = os.path.abspath(base_dir)
+
+        self.inbox_dir = os.path.join(self.base_dir, "inbox")
+        self.library_dir = os.path.join(self.base_dir, "library")
+        self.thumbs_dir = os.path.join(self.base_dir, "thumbs")
+        self.index_file = os.path.join(self.base_dir, "index.json")
 
         for d in (self.inbox_dir, self.library_dir, self.thumbs_dir):
             os.makedirs(d, exist_ok=True)

@@ -722,8 +722,10 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
     source = request.query_params.get("source") or default_source
     saved_items = []
 
+    force = request.query_params.get("force", "").lower() in ("true", "1", "yes")
+
     # Check nightly quota for automated Apple Shortcuts sync (max 5 photos per night)
-    is_automated_sync = (source == "apple_shortcut" or default_source == "apple_shortcut")
+    is_automated_sync = (source == "apple_shortcut" or default_source == "apple_shortcut") and not force
     if is_automated_sync:
         remaining_nightly = memories.get_nightly_remaining()
         if remaining_nightly <= 0:
