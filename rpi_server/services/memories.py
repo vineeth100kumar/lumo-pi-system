@@ -26,7 +26,9 @@ class MemoriesService:
         self.current_index = 0
         self.auto_rotate = True
         self.interval_sec = 20
-        self.max_photos = 200
+        self.max_photos = 20
+        self.nightly_quota = 5
+        self.nightly_uploads: Dict[str, int] = {}
         self.swap_bytes = True
         self.bgr_mode = False
 
@@ -40,7 +42,16 @@ class MemoriesService:
                     self.photos = data.get("photos", [])
                     self.auto_rotate = data.get("auto_rotate", True)
                     self.interval_sec = data.get("interval_sec", 20)
-                    logger.info(f"Loaded {len(self.photos)} memories from index.")
+                    self.max_photos = data.get("max_photos", 20)
+                    self.nightly_quota = data.get("nightly_quota", 5)
+                    self.nightly_uploads = data.get("nightly_uploads", {})
+
+                    # Enforce max quota on existing library
+                    while len(self.photos) > self.max_photos:
+                        old = self.photos.pop()
+                        self._delete_disk_files(old)
+
+                    logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max, {self.nightly_quota}/night).")
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
                 self.photos = []
@@ -52,10 +63,59 @@ class MemoriesService:
                     "photos": self.photos,
                     "auto_rotate": self.auto_rotate,
                     "interval_sec": self.interval_sec,
+                    "max_photos": self.max_photos,
+                    "nightly_quota": self.nightly_quota,
+                    "nightly_uploads": self.nightly_uploads,
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save memories index: {e}")
+
+    def _get_logical_night_key(self) -> str:
+        """Returns the logical night date key (shifts midnight to 6:00 AM).
+        11:00 PM on Sept 21 and 2:00 AM on Sept 22 belong to the same night bucket.
+        """
+        from datetime import timedelta
+        now = datetime.now()
+        logical_date = now - timedelta(hours=6)
+        return logical_date.strftime("%Y-%m-%d")
+
+    def get_nightly_upload_count(self) -> int:
+        key = self._get_logical_night_key()
+        return self.nightly_uploads.get(key, 0)
+
+    def get_nightly_remaining(self) -> int:
+        if self.nightly_quota <= 0:
+            return 999
+        return max(0, self.nightly_quota - self.get_nightly_upload_count())
+
+    def record_nightly_upload(self, count: int = 1):
+        if count <= 0:
+            return
+        key = self._get_logical_night_key()
+        self.nightly_uploads[key] = self.nightly_uploads.get(key, 0) + count
+        # Retain last 14 days of history
+        if len(self.nightly_uploads) > 14:
+            sorted_keys = sorted(self.nightly_uploads.keys())
+            for old_k in sorted_keys[:-14]:
+                del self.nightly_uploads[old_k]
+        self._save_index()
+
+    def reset_tonight_uploads(self):
+        key = self._get_logical_night_key()
+        if key in self.nightly_uploads:
+            del self.nightly_uploads[key]
+            self._save_index()
+
+    def set_quotas(self, max_photos: Optional[int] = None, nightly_quota: Optional[int] = None):
+        if max_photos is not None:
+            self.max_photos = max(1, max_photos)
+            while len(self.photos) > self.max_photos:
+                old = self.photos.pop()
+                self._delete_disk_files(old)
+        if nightly_quota is not None:
+            self.nightly_quota = max(1, nightly_quota)
+        self._save_index()
 
     def _rgb888_to_rgb565(self, r: int, g: int, b: int) -> int:
         if self.bgr_mode:

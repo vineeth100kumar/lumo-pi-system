@@ -408,6 +408,10 @@ async def get_status():
         "bluetooth": bt_status,
         "memories": {
             "count": len(memories.photos),
+            "max_photos": memories.max_photos,
+            "nightly_quota": memories.nightly_quota,
+            "nightly_used": memories.get_nightly_upload_count(),
+            "nightly_remaining": memories.get_nightly_remaining(),
             "current_index": memories.current_index,
             "auto_rotate": memories.auto_rotate,
             "interval_sec": memories.interval_sec,
@@ -689,6 +693,9 @@ class MemoryConfig(BaseModel):
     interval_sec: Optional[int] = None
     swap_bytes: Optional[bool] = None
     bgr_mode: Optional[bool] = None
+    max_photos: Optional[int] = None
+    nightly_quota: Optional[int] = None
+    reset_nightly: Optional[bool] = None
 
 @app.get("/api/memories")
 async def get_memories():
@@ -699,6 +706,10 @@ async def get_memories():
         "interval_sec": memories.interval_sec,
         "swap_bytes": memories.swap_bytes,
         "bgr_mode": memories.bgr_mode,
+        "max_photos": memories.max_photos,
+        "nightly_quota": memories.nightly_quota,
+        "nightly_used": memories.get_nightly_upload_count(),
+        "nightly_remaining": memories.get_nightly_remaining(),
     }
 
 async def _process_memory_upload(request: Request, default_source: str = "upload", default_display: bool = False):
@@ -710,6 +721,23 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
 
     source = request.query_params.get("source") or default_source
     saved_items = []
+
+    # Check nightly quota for automated Apple Shortcuts sync (max 5 photos per night)
+    is_automated_sync = (source == "apple_shortcut" or default_source == "apple_shortcut")
+    if is_automated_sync:
+        remaining_nightly = memories.get_nightly_remaining()
+        if remaining_nightly <= 0:
+            return {
+                "ok": False,
+                "quota_reached": True,
+                "count": 0,
+                "message": f"Nightly quota reached: {memories.nightly_quota}/{memories.nightly_quota} photos already synced tonight. Next sync tomorrow night!",
+                "nightly_used": memories.get_nightly_upload_count(),
+                "nightly_quota": memories.nightly_quota,
+                "total_count": len(memories.photos),
+                "total_quota": memories.max_photos,
+                "photos": []
+            }
 
     content_type = request.headers.get("content-type", "")
 
@@ -725,6 +753,10 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
         for key, val in form.multi_items():
             if isinstance(val, UploadFile):
                 files_to_process.append(val)
+
+        # If automated sync, cap batch to remaining slots for tonight (max 5 per night)
+        if is_automated_sync and remaining_nightly < len(files_to_process):
+            files_to_process = files_to_process[:remaining_nightly]
 
         is_batch = len(files_to_process) > 1
 
@@ -774,6 +806,10 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
     if not saved_items:
         raise HTTPException(status_code=400, detail="No valid images received or image decoding failed")
 
+    # Record nightly upload count
+    if is_automated_sync and saved_items:
+        memories.record_nightly_upload(len(saved_items))
+
     # If display was requested, push latest photo to ESP32 display
     if should_display or current_screen == "MEMORY":
         if current_screen != "MEMORY":
@@ -786,9 +822,13 @@ async def _process_memory_upload(request: Request, default_source: str = "upload
         "ok": True,
         "status": "success",
         "count": count,
-        "message": f"Saved {count} photo{'s' if count > 1 else ''} to LUMO!",
+        "message": f"Saved {count} photo{'s' if count > 1 else ''} to LUMO! (Quota: {len(memories.photos)}/{memories.max_photos}, Nightly: {memories.get_nightly_upload_count()}/{memories.nightly_quota})",
         "photos": saved_items,
         "photo": saved_items[0],
+        "nightly_used": memories.get_nightly_upload_count(),
+        "nightly_quota": memories.nightly_quota,
+        "total_count": len(memories.photos),
+        "total_quota": memories.max_photos,
         "displayed": should_display or current_screen == "MEMORY"
     }
 
@@ -840,6 +880,10 @@ async def update_memories_config(item: MemoryConfig):
         memories.swap_bytes = item.swap_bytes
     if item.bgr_mode is not None:
         memories.bgr_mode = item.bgr_mode
+    if item.max_photos is not None or item.nightly_quota is not None:
+        memories.set_quotas(item.max_photos, item.nightly_quota)
+    if item.reset_nightly:
+        memories.reset_tonight_uploads()
     memories._save_index()
     return {
         "ok": True,
@@ -847,6 +891,10 @@ async def update_memories_config(item: MemoryConfig):
         "interval_sec": memories.interval_sec,
         "swap_bytes": memories.swap_bytes,
         "bgr_mode": memories.bgr_mode,
+        "max_photos": memories.max_photos,
+        "nightly_quota": memories.nightly_quota,
+        "nightly_used": memories.get_nightly_upload_count(),
+        "nightly_remaining": memories.get_nightly_remaining(),
     }
 
 if __name__ == "__main__":
