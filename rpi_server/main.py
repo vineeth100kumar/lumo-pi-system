@@ -16,7 +16,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import websockets
 from zeroconf.asyncio import AsyncZeroconf, AsyncServiceInfo
 
-from config import WS_PORT, HTTP_PORT, MDNS_NAME, SAGE_REFRESH_SECONDS
+from config import WS_PORT, HTTP_PORT, HTTP_PLAIN_PORT, MDNS_NAME, SAGE_REFRESH_SECONDS
 from ws_hub import WSHub
 from services.sage_client import SageClient, key_search_report
 from services.spotify import SpotifyService
@@ -834,7 +834,8 @@ if __name__ == "__main__":
 
         if os.path.exists(cert_path) and os.path.exists(key_path):
             logger.info(f"🔒 HTTPS enabled: cert={cert_path}, key={key_path}")
-            logger.info(f"👉 Access dashboard securely at: https://<pi-ip>:{HTTP_PORT} to use phone/laptop mic")
+            logger.info(f"👉 Access dashboard securely at: https://<pi-ip>:{HTTP_PORT} (for phone mic & web UI)")
+            logger.info(f"👉 Plain HTTP active on port {HTTP_PLAIN_PORT} at: http://<pi-ip>:{HTTP_PLAIN_PORT} (for Apple Shortcuts without SSL certificate errors)")
             ssl_kwargs["ssl_certfile"] = cert_path
             ssl_kwargs["ssl_keyfile"] = key_path
         else:
@@ -842,4 +843,20 @@ if __name__ == "__main__":
     else:
         logger.info("SSL disabled via ENABLE_SSL=false. Starting server in plain HTTP.")
 
-    uvicorn.run("main:app", host="0.0.0.0", port=HTTP_PORT, reload=False, **ssl_kwargs)
+    async def run_dual_servers():
+        if enable_ssl and ssl_kwargs:
+            # 1. Primary HTTPS server on 8080 (normal lifespan with WebSockets, Scheduler, Sage bridge)
+            cfg_https = uvicorn.Config("main:app", host="0.0.0.0", port=HTTP_PORT, reload=False, **ssl_kwargs)
+            srv_https = uvicorn.Server(cfg_https)
+
+            # 2. Secondary Plain HTTP server on 8081 (lifespan off so no duplicate scheduler or websocket tasks)
+            cfg_http = uvicorn.Config("main:app", host="0.0.0.0", port=HTTP_PLAIN_PORT, reload=False, lifespan="off")
+            srv_http = uvicorn.Server(cfg_http)
+
+            await asyncio.gather(srv_https.serve(), srv_http.serve())
+        else:
+            cfg = uvicorn.Config("main:app", host="0.0.0.0", port=HTTP_PORT, reload=False)
+            srv = uvicorn.Server(cfg)
+            await srv.serve()
+
+    asyncio.run(run_dual_servers())

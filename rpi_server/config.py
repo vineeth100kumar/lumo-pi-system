@@ -6,6 +6,7 @@ load_dotenv()
 # Server Ports & Hostname
 WS_PORT = int(os.getenv("WS_PORT", 8765))
 HTTP_PORT = int(os.getenv("HTTP_PORT", 8080))
+HTTP_PLAIN_PORT = int(os.getenv("HTTP_PLAIN_PORT", 8081))
 MDNS_NAME = os.getenv("MDNS_NAME", "lumo")
 
 # Spotify API Credentials

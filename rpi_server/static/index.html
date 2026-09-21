@@ -1018,10 +1018,16 @@
 
     <!-- Quick Copy Endpoint URL -->
     <div style="margin-bottom:14px;">
-      <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">Your LUMO Shortcut Ingestion URL</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px;">Your LUMO Shortcut Ingestion URL</span>
+        <span style="font-size:0.68rem; color:#30d158; background:rgba(48,209,88,0.15); padding:2px 6px; border-radius:6px; font-weight:600;">Port 8081 &bull; No SSL Error</span>
+      </div>
       <div class="code-pill">
-        <span id="shortcutUrlText">https://.../api/memories/shortcut</span>
+        <span id="shortcutUrlText">http://...:8081/api/memories/shortcut</span>
         <button onclick="copyShortcutUrl()" id="btnCopyShortcutUrl" style="padding:4px 8px; font-size:0.72rem; background:var(--accent); border:none; border-radius:6px; color:#fff; cursor:pointer;">Copy</button>
+      </div>
+      <div style="font-size:0.72rem; color:#ff9f0a; margin-top:5px; line-height:1.35;">
+        ⚡ <b>Uses plain HTTP on port 8081:</b> Completely eliminates iOS "invalid certificate" warnings!
       </div>
     </div>
 
@@ -2355,9 +2361,10 @@
     const urlEl = document.getElementById("shortcutUrlText");
     const curlEl = document.getElementById("curlExampleText");
 
-    const fullUrl = `${window.location.protocol}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '80')}/api/memories/shortcut`;
+    // Apple Shortcuts uses plain HTTP on port 8081 to bypass self-signed SSL certificate errors
+    const fullUrl = `http://${window.location.hostname}:8081/api/memories/shortcut`;
     if (urlEl) urlEl.textContent = fullUrl;
-    if (curlEl) curlEl.textContent = `curl -k -X POST -F "file=@photo.jpg" "${fullUrl}"`;
+    if (curlEl) curlEl.textContent = `curl -X POST -F "file=@photo.jpg" "${fullUrl}"`;
 
     if (modal) modal.style.display = "flex";
   }
