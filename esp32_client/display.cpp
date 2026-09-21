@@ -56,6 +56,7 @@ void onNewArt(const uint8_t* data, size_t len) {
 
 static char lastMemoryCaption[28] = "";
 static uint16_t stripBuf[320 * 20]; // 12.8 KB static aligned buffer
+static bool memoryImageLoaded = false;
 
 void onNewMemoryStrip(const uint8_t* data, size_t len) {
   if (len < 8) return;
@@ -67,6 +68,9 @@ void onNewMemoryStrip(const uint8_t* data, size_t len) {
 
   size_t expected_pixels = (size_t)strip_w * strip_h;
   if (expected_pixels > 320 * 20 || len < 8 + expected_pixels * 2) return;
+
+  // Mark image as loaded/streaming so subsequent screen switches don't erase it with fillScreen
+  memoryImageLoaded = true;
 
   // Safe aligned copy into SRAM buffer (fixes byte-alignment shift and prevents color distortion)
   memcpy(stripBuf, data + 8, expected_pixels * 2);
@@ -762,7 +766,8 @@ static void drawMemoryScreen(const LumoState& s, bool full) {
   strncpy(lastMemoryCaption, s.mem_caption, sizeof(lastMemoryCaption) - 1);
   lastMemoryCaption[sizeof(lastMemoryCaption) - 1] = '\0';
 
-  if (full) {
+  // Only fill with black and show placeholder if no memory image has been streamed yet
+  if (full && !memoryImageLoaded) {
     tft.fillScreen(COLOR_BG_BLACK);
     tft.setFont(NULL);
     tft.setTextSize(1);
@@ -791,6 +796,9 @@ static void drawMemoryScreen(const LumoState& s, bool full) {
 }
 
 void displayDrawScreen(ScreenMode mode, const LumoState& s, bool forceFullRedraw) {
+  if (mode != SCREEN_MEMORY) {
+    memoryImageLoaded = false;
+  }
   bool modeChanged = (mode != lastModeDrawn) || forceFullRedraw;
   lastModeDrawn = mode;
 

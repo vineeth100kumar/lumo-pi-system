@@ -155,11 +155,14 @@ async def broadcast_clock():
 async def on_esp32_ready():
     logger.info("Sending initial synchronization to ESP32...")
     await broadcast_clock()
-    await weather.poll(hub)
-    await emotion.push_schedule(hub)
-    await tasks.push_to_esp32(hub)
     await hub.send_json({"cmd": "SCREEN", "mode": current_screen})
     await hub.send_json({"cmd": "LIGHTS", "mode": "WARM", "brightness": 40, "hue": 0})
+    if current_screen == "MEMORY":
+        await memories.push_current(hub)
+    # Background sync for external data
+    await emotion.push_schedule(hub)
+    await tasks.push_to_esp32(hub)
+    await weather.poll(hub)
 
 # ===================== SAGE EVENT BRIDGE =====================
 async def refresh_from_sage():

@@ -37,7 +37,7 @@
 #define V_TOL   0.05f
 
 // ===================== FIRMWARE =====================
-#define FW_VERSION "1.3.0"
+#define FW_VERSION "1.4.0"
 
 // ===================== ENUMS =====================
 enum Button       { BTN_NONE, BTN_OK, BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT };

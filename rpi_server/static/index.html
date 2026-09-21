@@ -1745,8 +1745,11 @@
   }
 
   async function pushMemoryToDisplay() {
-    await switchDisplay("MEMORY");
-    await postApi("/api/memories/push");
+    if (activeScreenMode !== "MEMORY") {
+      await switchDisplay("MEMORY");
+    } else {
+      await postApi("/api/memories/push");
+    }
   }
 
   async function deleteCurrentMemory() {
