@@ -187,8 +187,8 @@
     .item-time { font-size: 1.2rem; font-weight: 600; }
     .item-label { font-size: 0.8rem; color: var(--muted); }
 
-    .toggle-switch { position: relative; width: 46px; height: 26px; }
-    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-switch, .switch { position: relative; width: 46px; height: 26px; display: inline-block; flex-shrink: 0; }
+    .toggle-switch input, .switch input { opacity: 0; width: 0; height: 0; }
     .slider-toggle {
       position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
       background-color: rgba(255,255,255,0.15); transition: .3s; border-radius: 26px;
@@ -689,7 +689,7 @@
     <!-- Auto-Rotate & Calibration Settings -->
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:0.82rem;">
       <span style="color:#eee;">Ambient Idle Auto-Rotate (after 2m)</span>
-      <label class="switch">
+      <label class="toggle-switch">
         <input type="checkbox" id="memAutoRotateToggle" onchange="toggleMemAutoRotate(this.checked)">
         <span class="slider-toggle"></span>
       </label>
