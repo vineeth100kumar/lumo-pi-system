@@ -28,7 +28,10 @@ class VisionCurator:
 
     def __init__(self):
         self.face_cascade = None
+        self.face_cascade_alt2 = None
+        self.face_cascade_default = None
         self.profile_cascade = None
+        self.upperbody_cascade = None
         self._init_models()
 
     def _init_models(self):
@@ -38,13 +41,21 @@ class VisionCurator:
             haar_dir = getattr(cv2, "data", None)
             if haar_dir and hasattr(haar_dir, "haarcascades"):
                 base_dir = haar_dir.haarcascades
-                frontal_path = os.path.join(base_dir, "haarcascade_frontalface_default.xml")
+                alt2_path = os.path.join(base_dir, "haarcascade_frontalface_alt2.xml")
+                default_path = os.path.join(base_dir, "haarcascade_frontalface_default.xml")
                 profile_path = os.path.join(base_dir, "haarcascade_profileface.xml")
+                upperbody_path = os.path.join(base_dir, "haarcascade_upperbody.xml")
 
-                if os.path.exists(frontal_path):
-                    self.face_cascade = cv2.CascadeClassifier(frontal_path)
+                if os.path.exists(alt2_path):
+                    self.face_cascade_alt2 = cv2.CascadeClassifier(alt2_path)
+                if os.path.exists(default_path):
+                    self.face_cascade_default = cv2.CascadeClassifier(default_path)
                 if os.path.exists(profile_path):
                     self.profile_cascade = cv2.CascadeClassifier(profile_path)
+                if os.path.exists(upperbody_path):
+                    self.upperbody_cascade = cv2.CascadeClassifier(upperbody_path)
+
+                self.face_cascade = self.face_cascade_alt2 or self.face_cascade_default
 
                 logger.info("VisionCurator initialized with OpenCV Haar face detection cascades.")
         except Exception as e:
@@ -52,7 +63,7 @@ class VisionCurator:
 
     @property
     def is_available(self) -> bool:
-        return bool(OPENCV_AVAILABLE and self.face_cascade is not None)
+        return bool(OPENCV_AVAILABLE and (self.face_cascade is not None or self.face_cascade_alt2 is not None))
 
     def classify(self, img_input: Union[Image.Image, bytes, "np.ndarray"]) -> Dict[str, Any]:
         """
@@ -142,47 +153,72 @@ class VisionCurator:
         return None
 
     def _detect_faces(self, bgr: "np.ndarray") -> Optional[Dict[str, Any]]:
-        """Detects human faces using Haar Cascades. Returns portrait dict if faces found."""
-        if self.face_cascade is None:
+        """Detects human faces & figures using high-sensitivity Haar Cascades (alt2 + profile + upperbody)."""
+        if self.face_cascade is None and self.face_cascade_alt2 is None:
             return None
 
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        # Contrast adjustment for face detection in poor lighting
-        gray = cv2.equalizeHist(gray)
+        
+        # Dual preprocessing: CLAHE enhanced (for poor/harsh lighting) + raw gray
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray_clahe = clahe.apply(gray)
 
-        # Detect frontal faces
-        faces = self.face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=4,
-            minSize=(26, 26)
-        )
+        face_list = []
 
-        face_list = list(faces)
+        # 1. Test frontal face alt2 on CLAHE (finest scaleFactor=1.05, minSize=(16, 16), minNeighbors=3)
+        detector_alt2 = self.face_cascade_alt2 or self.face_cascade
+        if detector_alt2 is not None:
+            faces = detector_alt2.detectMultiScale(
+                gray_clahe,
+                scaleFactor=1.05,
+                minNeighbors=3,
+                minSize=(16, 16)
+            )
+            face_list.extend(list(faces))
 
-        # If no frontal faces, check profile faces
+            # If not found on CLAHE, try raw gray
+            if len(face_list) == 0:
+                faces = detector_alt2.detectMultiScale(
+                    gray,
+                    scaleFactor=1.08,
+                    minNeighbors=3,
+                    minSize=(16, 16)
+                )
+                face_list.extend(list(faces))
+
+        # 2. Fallback to frontal face default cascade if alt2 missed
+        if len(face_list) == 0 and self.face_cascade_default is not None:
+            faces = self.face_cascade_default.detectMultiScale(
+                gray_clahe,
+                scaleFactor=1.08,
+                minNeighbors=3,
+                minSize=(16, 16)
+            )
+            face_list.extend(list(faces))
+
+        # 3. If no frontal face, check profile face (left and right)
         if len(face_list) == 0 and self.profile_cascade is not None:
             profiles = self.profile_cascade.detectMultiScale(
-                gray,
-                scaleFactor=1.15,
-                minNeighbors=4,
-                minSize=(26, 26)
+                gray_clahe,
+                scaleFactor=1.08,
+                minNeighbors=3,
+                minSize=(16, 16)
             )
             face_list.extend(list(profiles))
-            # Also check horizontally flipped profile
+
             if len(face_list) == 0:
-                flipped = cv2.flip(gray, 1)
+                flipped = cv2.flip(gray_clahe, 1)
                 flipped_profiles = self.profile_cascade.detectMultiScale(
                     flipped,
-                    scaleFactor=1.15,
-                    minNeighbors=4,
-                    minSize=(26, 26)
+                    scaleFactor=1.08,
+                    minNeighbors=3,
+                    minSize=(16, 16)
                 )
                 face_list.extend(list(flipped_profiles))
 
         if len(face_list) > 0:
             face_count = len(face_list)
-            total_img_area = bgr.shape[0] * bgr.shape[1] # 320 * 240 = 76,800
+            total_img_area = bgr.shape[0] * bgr.shape[1]
 
             max_face_area = max(w * h for (x, y, w, h) in face_list)
             face_area_pct = max_face_area / float(total_img_area)
@@ -190,14 +226,14 @@ class VisionCurator:
             if face_count >= 3:
                 subtype = "group_portrait"
                 tag_label = "Group Portrait"
-            elif face_area_pct >= 0.12:
+            elif face_area_pct >= 0.10:
                 subtype = "close_up"
                 tag_label = "Close-up Portrait"
             else:
                 subtype = "portrait"
                 tag_label = "Portrait"
 
-            confidence = min(0.99, 0.80 + (0.05 * min(3, face_count)) + (0.10 * min(1.0, face_area_pct * 5)))
+            confidence = min(0.99, 0.82 + (0.04 * min(3, face_count)) + (0.10 * min(1.0, face_area_pct * 5)))
 
             return {
                 "category": "portrait",
@@ -209,6 +245,27 @@ class VisionCurator:
                 "tags": ["portrait", tag_label, f"{face_count} face{'s' if face_count > 1 else ''}"],
                 "reason": f"Detected {face_count} human face(s)"
             }
+
+        # 4. Fallback: Upper Body / Figure Detection (for people looking away, wearing hats/sunglasses, or half-body shots)
+        if self.upperbody_cascade is not None:
+            bodies = self.upperbody_cascade.detectMultiScale(
+                gray_clahe,
+                scaleFactor=1.08,
+                minNeighbors=3,
+                minSize=(32, 32)
+            )
+            if len(bodies) > 0:
+                body_count = len(bodies)
+                return {
+                    "category": "portrait",
+                    "curated": True,
+                    "confidence": 0.85,
+                    "face_count": body_count,
+                    "nature_score": 0.10,
+                    "subtype": "portrait",
+                    "tags": ["portrait", "Person", f"{body_count} person{'s' if body_count > 1 else ''}"],
+                    "reason": f"Detected {body_count} person / portrait figure(s)"
+                }
 
         return None
 
