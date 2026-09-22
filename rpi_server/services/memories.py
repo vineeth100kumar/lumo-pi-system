@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from PIL import Image, ImageOps, ImageEnhance
+from services.vision_curator import VisionCurator
 
 logger = logging.getLogger("MemoriesService")
 
@@ -43,6 +44,10 @@ class MemoriesService:
         self.swap_bytes = True
         self.bgr_mode = False
 
+        # AI Vision Curation (Portraits & Nature Only)
+        self.curator = VisionCurator()
+        self.curate_display = True
+
         self._load_index()
 
     def _load_index(self):
@@ -61,8 +66,9 @@ class MemoriesService:
                         self.nightly_quota = 0  # upgrade from previous default to unlimited
                     self.replace_duplicates = data.get("replace_duplicates", True)
                     self.gif_loops = data.get("gif_loops", 3)
+                    self.curate_display = data.get("curate_display", True)
 
-                    # Backfill fingerprint hashes for existing library if missing
+                    # Backfill fingerprint hashes and curation for existing library if missing
                     for p in self.photos:
                         if not p.get("pixel_hash") or not p.get("dhash"):
                             lib_p = os.path.join(self.library_dir, p.get("filename", ""))
@@ -73,13 +79,16 @@ class MemoriesService:
                                         p["dhash"] = self._calc_dhash(ex_img)
                                 except Exception:
                                     pass
+                        if "category" not in p:
+                            p["category"] = "nature"
+                            p["curated"] = True
 
                     # Enforce max quota on existing library
                     while len(self.photos) > self.max_photos:
                         old = self.photos.pop()
                         self._delete_disk_files(old)
 
-                    logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer).")
+                    logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
                 self.photos = []
@@ -96,6 +105,7 @@ class MemoriesService:
                     "nightly_uploads": self.nightly_uploads,
                     "replace_duplicates": self.replace_duplicates,
                     "gif_loops": self.gif_loops,
+                    "curate_display": self.curate_display,
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
@@ -420,6 +430,9 @@ class MemoriesService:
             else:
                 caption = str(caption).strip()[:24]
 
+            # Analyze image content with VisionCurator (Portraits & Nature classification)
+            curation_res = self.curator.classify(display_img)
+
             # Pre-render binary strips for all frames (12 strips per frame)
             all_frame_strips = [self._render_frame_strips(f) for f in frames_320]
 
@@ -483,9 +496,19 @@ class MemoriesService:
                 existing["dhash"] = curr_dhash
                 existing["is_replaced"] = True
 
+                # Update classification if not manually overridden
+                if existing.get("curated_override") is None:
+                    existing["category"] = curation_res.get("category", "nature")
+                    existing["curated"] = curation_res.get("curated", True)
+                    existing["face_count"] = curation_res.get("face_count", 0)
+                    existing["nature_score"] = curation_res.get("nature_score", 0.0)
+                    existing["subtype"] = curation_res.get("subtype", "")
+                    existing["classification_tags"] = curation_res.get("tags", [])
+                    existing["classification_reason"] = curation_res.get("reason", "")
+
                 self.photos.insert(0, existing)
                 self._save_index()
-                logger.info(f"Duplicate photo detected: replaced existing memory '{photo_id}' ({existing.get('caption')}, is_gif={is_gif}) without duplicating.")
+                logger.info(f"Duplicate photo detected: replaced existing memory '{photo_id}' ({existing.get('caption')}, is_gif={is_gif}, category={existing.get('category')}) without duplicating.")
 
                 if notify and hub and hub.connected:
                     await hub.send_json({
@@ -531,7 +554,15 @@ class MemoriesService:
                 "dhash": curr_dhash,
                 "is_gif": is_gif,
                 "frame_count": len(frames_320),
-                "is_replaced": False
+                "is_replaced": False,
+                "category": curation_res.get("category", "nature"),
+                "curated": curation_res.get("curated", True),
+                "face_count": curation_res.get("face_count", 0),
+                "nature_score": curation_res.get("nature_score", 0.0),
+                "subtype": curation_res.get("subtype", ""),
+                "classification_tags": curation_res.get("tags", []),
+                "classification_reason": curation_res.get("reason", ""),
+                "curated_override": None
             }
 
             self.photos.insert(0, item)
@@ -541,7 +572,7 @@ class MemoriesService:
                 self._delete_disk_files(old)
 
             self._save_index()
-            logger.info(f"Successfully ingested memory '{photo_id}' ({caption}, is_gif={is_gif}) from {source}")
+            logger.info(f"Successfully ingested memory '{photo_id}' ({caption}, is_gif={is_gif}, category={item['category']}) from {source}")
 
             if notify and hub and hub.connected:
                 await hub.send_json({
@@ -603,11 +634,110 @@ class MemoriesService:
             for p in self.photos
         ]
 
-    def get_current(self) -> Optional[Dict[str, Any]]:
+    def get_displayable_photos(self) -> List[Dict[str, Any]]:
+        """Returns photos eligible for display on the ESP32 desk screen."""
         if not self.photos:
+            return []
+        if not self.curate_display:
+            return self.photos
+
+        # Filter to only portraits & nature (or photos with manual positive override)
+        curated = [
+            p for p in self.photos
+            if (p.get("curated_override") is True) or
+               (p.get("curated_override") is not False and p.get("category", "nature") in ("portrait", "nature"))
+        ]
+        # Graceful fallback: if no photos match, display all photos rather than black screen
+        return curated if curated else self.photos
+
+    def get_current(self) -> Optional[Dict[str, Any]]:
+        displayable = self.get_displayable_photos()
+        if not displayable:
             return None
-        self.current_index = self.current_index % len(self.photos)
-        return self.photos[self.current_index]
+        self.current_index = self.current_index % len(displayable)
+        return displayable[self.current_index]
+
+    def select_photo(self, photo_id: str) -> Optional[Dict[str, Any]]:
+        displayable = self.get_displayable_photos()
+        for idx, p in enumerate(displayable):
+            if p.get("id") == photo_id:
+                self.current_index = idx
+                return p
+        # If not in displayable (e.g. filtered out), locate in all photos
+        for p in self.photos:
+            if p.get("id") == photo_id:
+                return p
+        return None
+
+    def scan_and_curate_all(self) -> Dict[str, Any]:
+        """Retroactively analyzes and classifies all photos in library."""
+        counts = {"total": len(self.photos), "curated": 0, "portrait": 0, "nature": 0, "other": 0}
+        for p in self.photos:
+            if p.get("curated_override") is not None:
+                cat = p.get("category", "other")
+                counts[cat] = counts.get(cat, 0) + 1
+                if p.get("curated"):
+                    counts["curated"] += 1
+                continue
+
+            lib_p = os.path.join(self.library_dir, p.get("filename", ""))
+            thumb_p = os.path.join(self.thumbs_dir, p.get("thumb", ""))
+            target_path = lib_p if os.path.exists(lib_p) else thumb_p
+
+            if os.path.exists(target_path):
+                try:
+                    with Image.open(target_path) as img:
+                        res = self.curator.classify(img)
+                        p["category"] = res.get("category", "nature")
+                        p["curated"] = res.get("curated", True)
+                        p["face_count"] = res.get("face_count", 0)
+                        p["nature_score"] = res.get("nature_score", 0.0)
+                        p["subtype"] = res.get("subtype", "")
+                        p["classification_tags"] = res.get("tags", [])
+                        p["classification_reason"] = res.get("reason", "")
+                except Exception as e:
+                    logger.warning(f"Failed to classify photo {p.get('id')}: {e}")
+
+            cat = p.get("category", "nature")
+            counts[cat] = counts.get(cat, 0) + 1
+            if p.get("curated", True):
+                counts["curated"] += 1
+
+        self._save_index()
+        logger.info(f"Retroactive curation scan complete: {counts}")
+        return counts
+
+    def set_photo_category_override(self, photo_id: str, category: str) -> Optional[Dict[str, Any]]:
+        category = category.lower().strip()
+        if category not in ("portrait", "nature", "other"):
+            return None
+        for p in self.photos:
+            if p.get("id") == photo_id:
+                p["category"] = category
+                p["curated"] = (category in ("portrait", "nature"))
+                p["curated_override"] = (category in ("portrait", "nature"))
+                self._save_index()
+                return p
+        return None
+
+    def get_curation_stats(self) -> Dict[str, Any]:
+        displayable = self.get_displayable_photos()
+        portraits = sum(1 for p in self.photos if p.get("category") == "portrait")
+        nature = sum(1 for p in self.photos if p.get("category") == "nature")
+        other = sum(1 for p in self.photos if p.get("category") == "other")
+        return {
+            "curate_display": self.curate_display,
+            "total": len(self.photos),
+            "total_photos": len(self.photos),
+            "curated_displayable": len(displayable),
+            "displayable_count": len(displayable),
+            "portrait": portraits,
+            "portraits_count": portraits,
+            "nature": nature,
+            "nature_count": nature,
+            "other": other,
+            "filtered_count": other,
+        }
 
     async def push_current(self, hub, on_advance=None) -> bool:
         """Streams current memory (static frame or GIF animation loop) to ESP32."""
@@ -682,19 +812,21 @@ class MemoriesService:
             logger.error(f"Error during GIF streaming for '{photo_id}': {e}")
 
     async def next_photo(self, hub=None, on_advance=None) -> Optional[Dict[str, Any]]:
-        if not self.photos:
+        displayable = self.get_displayable_photos()
+        if not displayable:
             return None
         self.stop_gif_playback()
-        self.current_index = (self.current_index + 1) % len(self.photos)
+        self.current_index = (self.current_index + 1) % len(displayable)
         if hub:
             await self.push_current(hub, on_advance=on_advance)
         return self.get_current()
 
     async def prev_photo(self, hub=None, on_advance=None) -> Optional[Dict[str, Any]]:
-        if not self.photos:
+        displayable = self.get_displayable_photos()
+        if not displayable:
             return None
         self.stop_gif_playback()
-        self.current_index = (self.current_index - 1) % len(self.photos)
+        self.current_index = (self.current_index - 1) % len(displayable)
         if hub:
             await self.push_current(hub, on_advance=on_advance)
         return self.get_current()

@@ -456,6 +456,8 @@ async def get_status():
             "nightly_remaining": memories.get_nightly_remaining(),
             "replace_duplicates": memories.replace_duplicates,
             "gif_loops": memories.gif_loops,
+            "curate_display": memories.curate_display,
+            "curation_stats": memories.get_curation_stats(),
             "current_index": memories.current_index,
             "auto_rotate": memories.auto_rotate,
             "interval_sec": memories.interval_sec,
@@ -742,6 +744,11 @@ class MemoryConfig(BaseModel):
     reset_nightly: Optional[bool] = None
     replace_duplicates: Optional[bool] = None
     gif_loops: Optional[int] = None
+    curate_display: Optional[bool] = None
+
+class CurationOverride(BaseModel):
+    id: str
+    category: str
 
 @app.get("/api/memories")
 async def get_memories():
@@ -758,6 +765,8 @@ async def get_memories():
         "nightly_remaining": memories.get_nightly_remaining(),
         "replace_duplicates": memories.replace_duplicates,
         "gif_loops": memories.gif_loops,
+        "curate_display": memories.curate_display,
+        "curation_stats": memories.get_curation_stats(),
     }
 
 async def _process_memory_upload(request: Request, default_source: str = "upload", default_display: bool = False):
@@ -926,13 +935,32 @@ async def delete_memory(photo_id: str):
     return {"ok": ok}
 
 @app.post("/api/memories/push")
-async def push_memory_to_display():
+async def push_memory_to_display(request: Request):
     touch_interaction()
+    photo_id = request.query_params.get("id")
+    if photo_id:
+        memories.select_photo(photo_id)
     if current_screen != "MEMORY":
         await set_screen_mode("MEMORY")
     else:
         await show_memory_current()
     return {"ok": True}
+
+@app.post("/api/memories/curate/scan")
+async def scan_and_curate_library():
+    counts = memories.scan_and_curate_all()
+    if current_screen == "MEMORY":
+        await show_memory_current()
+    return {"ok": True, "counts": counts, "curation_stats": memories.get_curation_stats()}
+
+@app.post("/api/memories/curate/override")
+async def override_photo_category(item: CurationOverride):
+    updated = memories.set_photo_category_override(item.id, item.category)
+    if not updated:
+        raise HTTPException(status_code=400, detail="Invalid photo ID or category (must be portrait, nature, or other)")
+    if current_screen == "MEMORY":
+        await show_memory_current()
+    return {"ok": True, "photo": updated, "curation_stats": memories.get_curation_stats()}
 
 @app.post("/api/memories/config")
 async def update_memories_config(item: MemoryConfig):
@@ -948,6 +976,8 @@ async def update_memories_config(item: MemoryConfig):
         memories.replace_duplicates = item.replace_duplicates
     if item.gif_loops is not None:
         memories.set_gif_loops(item.gif_loops)
+    if item.curate_display is not None:
+        memories.curate_display = item.curate_display
     if item.max_photos is not None or item.nightly_quota is not None:
         memories.set_quotas(item.max_photos, item.nightly_quota)
     if item.reset_nightly:
@@ -961,6 +991,8 @@ async def update_memories_config(item: MemoryConfig):
         "bgr_mode": memories.bgr_mode,
         "replace_duplicates": memories.replace_duplicates,
         "gif_loops": memories.gif_loops,
+        "curate_display": memories.curate_display,
+        "curation_stats": memories.get_curation_stats(),
         "max_photos": memories.max_photos,
         "nightly_quota": memories.nightly_quota,
         "nightly_used": memories.get_nightly_upload_count(),

@@ -469,6 +469,67 @@
       padding-top: 4px;
       border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
+    .mem-filter-pill {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+      border-radius: 12px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .mem-filter-pill:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .mem-filter-pill.active {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.25);
+    }
+    .mem-filter-pill span {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 1px 5px;
+      font-size: 0.65rem;
+    }
+    .mem-cat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.60rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .mem-cat-badge.portrait {
+      background: linear-gradient(135deg, rgba(142,68,173,0.9), rgba(155,89,182,0.9));
+      color: #fff;
+      border: 1px solid rgba(175, 122, 197, 0.5);
+    }
+    .mem-cat-badge.nature {
+      background: linear-gradient(135deg, rgba(39,174,96,0.9), rgba(46,204,113,0.9));
+      color: #fff;
+      border: 1px solid rgba(46, 204, 113, 0.5);
+    }
+    .mem-cat-badge.other {
+      background: rgba(0, 0, 0, 0.75);
+      color: #ff9f0a;
+      border: 1px solid rgba(255, 159, 10, 0.4);
+    }
+    .mem-grid-card.filtered-dim {
+      opacity: 0.58;
+      border-style: dashed;
+    }
     .mem-dropzone {
       border: 1.5px dashed rgba(255,255,255,0.18);
       border-radius: 14px;
@@ -919,9 +980,10 @@
       <!-- Bottom Glass Caption Bar -->
       <div id="memCaptionBar" style="display:none; position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent, rgba(7,9,14,0.75) 30%, rgba(7,9,14,0.95)); padding:12px 14px; justify-content:space-between; align-items:flex-end; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);">
         <div>
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
             <div id="memCaptionText" style="font-size:0.95rem; font-weight:700; color:#fff;">-</div>
             <span id="memIndexBadge" style="font-size:0.68rem; color:var(--muted); background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:6px;">1/1</span>
+            <span id="memCategoryPreviewBadge"></span>
           </div>
           <div style="display:flex; align-items:center; gap:6px;">
             <span id="memSourceBadge" class="mem-source-badge upload">via Web Upload</span>
@@ -957,6 +1019,14 @@
         <button id="btnViewFilmstrip" onclick="setMemViewMode('filmstrip')" style="padding:3px 7px; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.15); color:#fff; border:none; cursor:pointer;" title="Filmstrip view">🎞️ Strip</button>
         <button id="btnViewGrid" onclick="setMemViewMode('grid')" style="padding:3px 7px; font-size:0.7rem; border-radius:6px; background:transparent; color:var(--muted); border:none; cursor:pointer;" title="Grid gallery view">▦ Grid</button>
       </div>
+    </div>
+
+    <!-- Category Filter Pills (All, Portraits, Nature, Filtered) -->
+    <div id="memCategoryFilterBar" style="display:flex; gap:6px; overflow-x:auto; margin-bottom:10px; padding-bottom:2px; scrollbar-width:none;">
+      <button class="mem-filter-pill active" id="pillCatAll" onclick="setGalleryCategoryFilter('all')">All <span id="cntPillAll">0</span></button>
+      <button class="mem-filter-pill" id="pillCatPortrait" onclick="setGalleryCategoryFilter('portrait')">👤 Portraits <span id="cntPillPortrait">0</span></button>
+      <button class="mem-filter-pill" id="pillCatNature" onclick="setGalleryCategoryFilter('nature')">🌿 Nature <span id="cntPillNature">0</span></button>
+      <button class="mem-filter-pill" id="pillCatOther" onclick="setGalleryCategoryFilter('other')">📁 Filtered <span id="cntPillOther">0</span></button>
     </div>
 
     <!-- 1. Filmstrip Carousel View -->
@@ -998,6 +1068,30 @@
         </div>
         <div style="font-size:0.7rem; color:var(--muted); line-height:1.35;">
           Upload any number of images. Once the library reaches 50 photos, older photos are automatically overwritten.
+        </div>
+      </div>
+
+      <!-- Vision AI Curation Toggle (Portraits & Nature Only) -->
+      <div style="background:linear-gradient(135deg, rgba(142,68,173,0.18), rgba(46,204,113,0.14)); border:1px solid rgba(46,204,113,0.35); border-radius:10px; padding:10px 12px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-size:0.82rem; font-weight:700; color:#fff; display:flex; align-items:center; gap:6px;">
+              <span>✨ Curate: Portraits &amp; Nature Only</span>
+            </div>
+            <div style="font-size:0.68rem; color:var(--muted); margin-top:2px;" id="memCurationSummaryText">
+              Desk display only plays photos with human faces or natural landscapes
+            </div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="memCurateDisplayToggle" onchange="toggleMemCurateDisplay(this.checked)" checked>
+            <span class="slider-toggle"></span>
+          </label>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);">
+          <span style="font-size:0.7rem; color:#85e89d;" id="memCuratedCountBadge">32 of 50 photos curated</span>
+          <button onclick="scanAndCurateLibrary()" id="btnScanCurate" style="padding:4px 9px; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.18); color:#fff; cursor:pointer;" title="Re-scan all photos in library with Vision AI">
+            🔍 Re-scan Library
+          </button>
         </div>
       </div>
 
@@ -2181,6 +2275,9 @@
   // ==============================================================================
   let cachedMemories = [];
   let currentMemoryIndex = 0;
+  let galleryCategoryFilter = 'all'; // 'all' | 'portrait' | 'nature' | 'other'
+  let memCurateDisplay = true;
+  let memCurationStats = { total: 0, portrait: 0, nature: 0, other: 0, curated_displayable: 0 };
   const liveMemoryImg = new Image();
   let lastLoadedMemoryId = "";
 
@@ -2219,6 +2316,34 @@
       const dupToggle = document.getElementById("memReplaceDuplicatesToggle");
       if (dupToggle) dupToggle.checked = (data.replace_duplicates !== false);
 
+      memCurateDisplay = (data.curate_display !== false);
+      const curateToggle = document.getElementById("memCurateDisplayToggle");
+      if (curateToggle) curateToggle.checked = memCurateDisplay;
+
+      if (data.curation_stats) {
+        memCurationStats = data.curation_stats;
+      } else {
+        const pCount = cachedMemories.filter(m => m.category === "portrait").length;
+        const nCount = cachedMemories.filter(m => m.category === "nature").length;
+        const oCount = cachedMemories.length - pCount - nCount;
+        memCurationStats = { total: cachedMemories.length, portrait: pCount, nature: nCount, other: oCount, curated_displayable: pCount + nCount };
+      }
+
+      const curateBadge = document.getElementById("memCuratedCountBadge");
+      if (curateBadge) {
+        const dispCount = memCurationStats.curated_displayable !== undefined ? memCurationStats.curated_displayable : (memCurationStats.portrait + memCurationStats.nature);
+        curateBadge.textContent = `${dispCount} of ${cachedMemories.length} photos curated for display`;
+      }
+
+      const cntAll = document.getElementById("cntPillAll");
+      const cntPort = document.getElementById("cntPillPortrait");
+      const cntNat = document.getElementById("cntPillNature");
+      const cntOth = document.getElementById("cntPillOther");
+      if (cntAll) cntAll.textContent = cachedMemories.length;
+      if (cntPort) cntPort.textContent = memCurationStats.portrait || 0;
+      if (cntNat) cntNat.textContent = memCurationStats.nature || 0;
+      if (cntOth) cntOth.textContent = memCurationStats.other || 0;
+
       const liveBadge = document.getElementById("memDeskLiveBadge");
       if (liveBadge) liveBadge.style.display = (activeScreenMode === "MEMORY") ? "inline-flex" : "none";
 
@@ -2238,6 +2363,72 @@
     await fetchMemories();
   }
 
+  function setGalleryCategoryFilter(filter) {
+    galleryCategoryFilter = filter;
+    const pills = {
+      all: document.getElementById("pillCatAll"),
+      portrait: document.getElementById("pillCatPortrait"),
+      nature: document.getElementById("pillCatNature"),
+      other: document.getElementById("pillCatOther")
+    };
+    Object.keys(pills).forEach(key => {
+      if (pills[key]) {
+        pills[key].classList.toggle("active", key === filter);
+      }
+    });
+    renderMemoryGrid();
+  }
+
+  async function toggleMemCurateDisplay(val) {
+    memCurateDisplay = val;
+    await postApi("/api/memories/config", { curate_display: val });
+    if (activeScreenMode === "MEMORY") {
+      await postApi("/api/memories/push");
+    }
+    await fetchMemories();
+  }
+
+  async function scanAndCurateLibrary() {
+    const btn = document.getElementById("btnScanCurate");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳ Scanning...";
+    }
+    try {
+      const res = await postApi("/api/memories/curate/scan");
+      if (res && res.counts) {
+        const toast = document.createElement("div");
+        toast.style.cssText = "position:fixed; bottom:20px; right:20px; background:#141721; border:1px solid rgba(46,204,113,0.6); border-radius:12px; padding:12px 18px; color:#fff; font-size:0.82rem; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.6);";
+        toast.innerHTML = `✨ Scanned ${res.counts.total} photos: 👤 ${res.counts.portrait} Portraits, 🌿 ${res.counts.nature} Nature, 📁 ${res.counts.other} Filtered.`;
+        document.body.appendChild(toast);
+        setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 3500);
+      }
+      await fetchMemories();
+    } catch (e) {
+      console.error("Scan curation error:", e);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "🔍 Re-scan Library";
+      }
+    }
+  }
+
+  async function cycleCategory(photoId, currentCat) {
+    const cycleMap = {
+      portrait: "nature",
+      nature: "other",
+      other: "portrait"
+    };
+    const nextCat = cycleMap[currentCat] || "portrait";
+    try {
+      await postApi("/api/memories/curate/override", { id: photoId, category: nextCat });
+      await fetchMemories();
+    } catch (e) {
+      console.error("Override category error:", e);
+    }
+  }
+
   function renderMemoryPreview() {
     const imgEl = document.getElementById("memCurrentImg");
     const emptyEl = document.getElementById("memEmptyPlaceholder");
@@ -2247,12 +2438,14 @@
     const dateText = document.getElementById("memDateText");
     const indexBadge = document.getElementById("memIndexBadge");
     const overlayActions = document.getElementById("memOverlayActions");
+    const catBadge = document.getElementById("memCategoryPreviewBadge");
 
     if (!cachedMemories.length) {
       if (imgEl) imgEl.style.display = "none";
       if (emptyEl) emptyEl.style.display = "block";
       if (capBar) capBar.style.display = "none";
       if (overlayActions) overlayActions.style.display = "none";
+      if (catBadge) catBadge.style.display = "none";
       return;
     }
 
@@ -2273,6 +2466,26 @@
 
     if (capText) capText.textContent = cur.caption || "Memory Photo";
     if (indexBadge) indexBadge.textContent = `${currentMemoryIndex + 1} / ${cachedMemories.length}`;
+
+    if (catBadge) {
+      catBadge.style.display = "inline-flex";
+      const cat = cur.category || "other";
+      let catText = "📁 Filtered";
+      let catCls = "other";
+      if (cat === "portrait") {
+        catText = cur.vision_label ? `👤 ${cur.vision_label}` : "👤 Portrait";
+        catCls = "portrait";
+      } else if (cat === "nature") {
+        catText = cur.vision_label ? `🌿 ${cur.vision_label}` : "🌿 Nature";
+        catCls = "nature";
+      }
+      if (cur.curated_override) {
+        catText += " ★";
+      }
+      catBadge.className = "mem-cat-badge " + catCls;
+      catBadge.textContent = catText;
+      catBadge.title = cur.curated_override ? "Manual user override" : (cur.vision_label || cat);
+    }
 
     if (srcBadge) {
       const src = (cur.source || "").toLowerCase();
@@ -2315,14 +2528,22 @@
     strip.innerHTML = "";
     cachedMemories.forEach((m, idx) => {
       const item = document.createElement("div");
+      const isFilteredOut = memCurateDisplay && (m.category === "other") && !m.curated_override;
       item.className = "mem-thumb-item" + (idx === currentMemoryIndex ? " active" : "");
-      item.title = m.caption || `Photo ${idx + 1}`;
+      if (isFilteredOut) item.style.opacity = "0.55";
+      item.title = `${m.caption || 'Photo'} [${m.category || 'other'}]`;
       item.style.position = "relative";
 
       const img = document.createElement("img");
       img.src = m.thumb_url;
       img.alt = m.caption || "";
       item.appendChild(img);
+
+      // Category indicator badge (top-left)
+      const catIcon = document.createElement("span");
+      catIcon.style.cssText = "position:absolute; top:2px; left:2px; font-size:0.55rem; background:rgba(0,0,0,0.75); padding:1px 3px; border-radius:3px; pointer-events:none;";
+      catIcon.textContent = (m.category === "portrait") ? "👤" : ((m.category === "nature") ? "🌿" : "📁");
+      item.appendChild(catIcon);
 
       if (m.is_gif) {
         const gifBadge = document.createElement("span");
@@ -2337,7 +2558,7 @@
         renderMemoryThumbs();
         renderMemoryGrid();
         if (activeScreenMode === "MEMORY") {
-          await postApi("/api/memories/push");
+          await postApi("/api/memories/push?id=" + encodeURIComponent(m.id));
         }
       };
       strip.appendChild(item);
@@ -2360,19 +2581,36 @@
       return;
     }
 
-    cachedMemories.forEach((m, idx) => {
-      const card = document.createElement("div");
-      card.className = "mem-grid-card" + (idx === currentMemoryIndex ? " active" : "");
+    let itemsToDisplay = cachedMemories.map((m, originalIdx) => ({ photo: m, originalIdx }));
+    if (galleryCategoryFilter !== "all") {
+      itemsToDisplay = itemsToDisplay.filter(item => (item.photo.category || "other") === galleryCategoryFilter);
+    }
 
+    if (!itemsToDisplay.length) {
+      const filterNames = { portrait: "portraits", nature: "nature photos", other: "filtered non-curated photos" };
+      grid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; color:var(--muted); padding:24px; font-size:0.8rem;">No ${filterNames[galleryCategoryFilter] || 'matching photos'} found in your library.</div>`;
+      return;
+    }
+
+    itemsToDisplay.forEach(({ photo: m, originalIdx: idx }) => {
+      const card = document.createElement("div");
       const isActive = (idx === currentMemoryIndex);
+      const isFilteredOut = memCurateDisplay && (m.category === "other") && !m.curated_override;
+      card.className = "mem-grid-card" + (isActive ? " active" : "") + (isFilteredOut ? " filtered-dim" : "");
+
       const isShortcut = (m.source === "apple_shortcut" || m.source === "shortcut");
+      const cat = m.category || "other";
+      const catLabel = cat === "portrait" ? "👤 Portrait" : (cat === "nature" ? "🌿 Nature" : "📁 Filtered");
 
       card.innerHTML = `
         <div style="position:relative;">
           <img src="${m.thumb_url}" alt="${m.caption || ''}" onclick="selectMemoryIndex(${idx})">
-          ${isActive ? '<span style="position:absolute; top:4px; left:4px; font-size:0.58rem; font-weight:700; background:rgba(0,255,102,0.9); color:#000; padding:1px 5px; border-radius:4px;">● LIVE</span>' : ''}
-          ${m.is_gif ? '<span style="position:absolute; top:4px; right:4px; font-size:0.58rem; font-weight:700; background:rgba(255,45,85,0.85); color:#fff; padding:1px 5px; border-radius:4px;">🎞️ GIF</span>' : `<span style="position:absolute; bottom:4px; right:4px; font-size:0.58rem; background:rgba(0,0,0,0.7); color:#fff; padding:1px 4px; border-radius:3px;">#${idx + 1}</span>`}
-          ${m.is_gif ? `<span style="position:absolute; bottom:4px; right:4px; font-size:0.58rem; background:rgba(0,0,0,0.7); color:#fff; padding:1px 4px; border-radius:3px;">#${idx + 1}</span>` : ''}
+          ${isActive ? '<span style="position:absolute; top:4px; left:4px; font-size:0.58rem; font-weight:700; background:rgba(0,255,102,0.9); color:#000; padding:1px 5px; border-radius:4px; z-index:2;">● LIVE</span>' : ''}
+          <span class="mem-cat-badge ${cat}" style="position:absolute; top:4px; ${isActive ? 'left:54px;' : 'left:4px;'} z-index:2;" title="${m.curated_override ? 'Manual override' : (m.vision_label || cat)}">
+            ${catLabel}${m.curated_override ? ' ★' : ''}
+          </span>
+          ${m.is_gif ? '<span style="position:absolute; top:4px; right:4px; font-size:0.58rem; font-weight:700; background:rgba(255,45,85,0.85); color:#fff; padding:1px 5px; border-radius:4px; z-index:2;">🎞️ GIF</span>' : ''}
+          <span style="position:absolute; bottom:4px; right:4px; font-size:0.58rem; background:rgba(0,0,0,0.7); color:#fff; padding:1px 4px; border-radius:3px; z-index:2;">#${idx + 1}</span>
         </div>
         <div class="mem-grid-info">
           <div class="mem-grid-title" title="${m.caption || ''}">${m.caption || 'Memory Photo'}</div>
@@ -2382,6 +2620,7 @@
           </div>
           <div class="mem-grid-actions">
             <button onclick="streamMemory(${idx})" style="padding:2px 7px; font-size:0.65rem; background:rgba(0,229,255,0.15); color:var(--accent); border-radius:4px; border:none; cursor:pointer;" title="Stream to screen">📺 Show</button>
+            <button onclick="cycleCategory('${m.id}', '${cat}')" style="padding:2px 7px; font-size:0.65rem; background:rgba(255,255,255,0.1); color:#fff; border-radius:4px; border:none; cursor:pointer;" title="Switch category (Portrait ➔ Nature ➔ Filtered)">🏷️</button>
             <button onclick="deleteMemoryById('${m.id}')" style="padding:2px 7px; font-size:0.65rem; background:rgba(255,23,68,0.15); color:#ff1744; border-radius:4px; border:none; cursor:pointer;" title="Delete">🗑️</button>
           </div>
         </div>
@@ -2421,10 +2660,13 @@
     renderMemoryPreview();
     renderMemoryThumbs();
     renderMemoryGrid();
+    const cur = cachedMemories[idx];
+    const pushUrl = (cur && cur.id) ? ("/api/memories/push?id=" + encodeURIComponent(cur.id)) : "/api/memories/push";
     if (activeScreenMode !== "MEMORY") {
       await switchDisplay("MEMORY");
+      await postApi(pushUrl);
     } else {
-      await postApi("/api/memories/push");
+      await postApi(pushUrl);
     }
   }
 
