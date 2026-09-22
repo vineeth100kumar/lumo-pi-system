@@ -21,17 +21,20 @@ class VisionCurator:
     """
     Intelligent Computer Vision classifier for LUMO Memories.
     Recognizes:
-      1. Human Faces (Portraits: close-up, single, group)
-      2. Nature-based Images (Landscapes, foliage/greenery, bodies of water, sky, sunsets, flowers)
-      3. Rejects non-scenic clutter (Screenshots, documents, receipts, flat noise, indoor junk)
+      1. Human Faces & Figures (Portraits: close-up, single, group, figures)
+      2. Nature-based Images (Landscapes, greenery/foliage, bodies of water, sky, sunsets, flowers)
+      3. Rejects non-scenic clutter (Screenshots, documents, receipts, flat graphics, indoor objects)
     """
 
     def __init__(self):
         self.face_cascade = None
         self.face_cascade_alt2 = None
         self.face_cascade_default = None
+        self.face_cascade_alt = None
         self.profile_cascade = None
         self.upperbody_cascade = None
+        self.fullbody_cascade = None
+        self.eye_cascade = None
         self._init_models()
 
     def _init_models(self):
@@ -43,17 +46,26 @@ class VisionCurator:
                 base_dir = haar_dir.haarcascades
                 alt2_path = os.path.join(base_dir, "haarcascade_frontalface_alt2.xml")
                 default_path = os.path.join(base_dir, "haarcascade_frontalface_default.xml")
+                alt_path = os.path.join(base_dir, "haarcascade_frontalface_alt.xml")
                 profile_path = os.path.join(base_dir, "haarcascade_profileface.xml")
                 upperbody_path = os.path.join(base_dir, "haarcascade_upperbody.xml")
+                fullbody_path = os.path.join(base_dir, "haarcascade_fullbody.xml")
+                eye_path = os.path.join(base_dir, "haarcascade_eye.xml")
 
                 if os.path.exists(alt2_path):
                     self.face_cascade_alt2 = cv2.CascadeClassifier(alt2_path)
                 if os.path.exists(default_path):
                     self.face_cascade_default = cv2.CascadeClassifier(default_path)
+                if os.path.exists(alt_path):
+                    self.face_cascade_alt = cv2.CascadeClassifier(alt_path)
                 if os.path.exists(profile_path):
                     self.profile_cascade = cv2.CascadeClassifier(profile_path)
                 if os.path.exists(upperbody_path):
                     self.upperbody_cascade = cv2.CascadeClassifier(upperbody_path)
+                if os.path.exists(fullbody_path):
+                    self.fullbody_cascade = cv2.CascadeClassifier(fullbody_path)
+                if os.path.exists(eye_path):
+                    self.eye_cascade = cv2.CascadeClassifier(eye_path)
 
                 self.face_cascade = self.face_cascade_alt2 or self.face_cascade_default
 
@@ -63,16 +75,16 @@ class VisionCurator:
 
     @property
     def is_available(self) -> bool:
-        return bool(OPENCV_AVAILABLE and (self.face_cascade is not None or self.face_cascade_alt2 is not None))
+        return bool(OPENCV_AVAILABLE and (self.face_cascade is not None or self.face_cascade_alt2 is not None or self.face_cascade_default is not None))
 
     def classify(self, img_input: Union[Image.Image, bytes, "np.ndarray"]) -> Dict[str, Any]:
         """
         Classifies an image into:
-          - 'portrait': One or more human faces detected.
+          - 'portrait': One or more human faces or portrait figures detected.
           - 'nature': Landscapes, greenery, sky, water, sunsets, flora.
-          - 'other': Screenshots, receipts, documents, indoor clutter.
+          - 'other': Screenshots, receipts, documents, indoor clutter, flat graphics.
 
-        Returns structured dict with category, curated flag, confidence, and tags.
+        Returns structured dict with category, curated flag, confidence, face_count, and tags.
         """
         if not OPENCV_AVAILABLE:
             # Fallback if OpenCV not installed
@@ -102,16 +114,17 @@ class VisionCurator:
                     "reason": "Failed to decode image data"
                 }
 
-            # Resize to standardized analysis resolution (320x240) for constant speed and thresholds
             h, w = bgr.shape[:2]
-            analysis_img = cv2.resize(bgr, (320, 240), interpolation=cv2.INTER_AREA)
 
-            # 2. Stage 1: Face Detection (Portraits)
-            portrait_res = self._detect_faces(analysis_img)
+            # 2. Stage 1: Face & Portrait Detection (Multi-scale high sensitivity)
+            portrait_res = self._detect_faces(bgr)
             if portrait_res is not None:
                 return portrait_res
 
-            # 3. Stage 2: Reject Documents & Screenshots
+            # Resize to standardized analysis resolution (320x240) for constant speed in Stages 2 & 3
+            analysis_img = cv2.resize(bgr, (320, 240), interpolation=cv2.INTER_AREA)
+
+            # 3. Stage 2: Reject Documents, Screenshots, Flat Graphics & Low-Texture Surfaces
             doc_res = self._detect_document_or_screenshot(analysis_img, orig_w=w, orig_h=h)
             if doc_res is not None:
                 return doc_res
@@ -153,87 +166,104 @@ class VisionCurator:
         return None
 
     def _detect_faces(self, bgr: "np.ndarray") -> Optional[Dict[str, Any]]:
-        """Detects human faces & figures using high-sensitivity Haar Cascades (alt2 + profile + upperbody)."""
-        if self.face_cascade is None and self.face_cascade_alt2 is None:
+        """Detects human faces & figures using high-sensitivity multi-scale Haar Cascades."""
+        if not OPENCV_AVAILABLE:
             return None
 
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        
-        # Dual preprocessing: CLAHE enhanced (for poor/harsh lighting) + raw gray
+        # Upscale smaller images to at least 480x360 so small faces in photos are clear
+        h, w = bgr.shape[:2]
+        if w < 480 or h < 360:
+            scale = max(480.0 / w, 360.0 / h)
+            face_img = cv2.resize(bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LINEAR)
+        elif w > 960 or h > 720:
+            scale = min(960.0 / w, 720.0 / h)
+            face_img = cv2.resize(bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        else:
+            face_img = bgr
+
+        gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray_clahe = clahe.apply(gray)
 
         face_list = []
+        detectors = [d for d in (self.face_cascade_alt2, self.face_cascade_default, self.face_cascade_alt) if d is not None]
 
-        # 1. Test frontal face alt2 on CLAHE (finest scaleFactor=1.05, minSize=(16, 16), minNeighbors=3)
-        detector_alt2 = self.face_cascade_alt2 or self.face_cascade
-        if detector_alt2 is not None:
-            faces = detector_alt2.detectMultiScale(
+        # 1. Frontal face cascades on CLAHE and raw grayscale
+        for det in detectors:
+            faces = det.detectMultiScale(
                 gray_clahe,
                 scaleFactor=1.05,
                 minNeighbors=3,
-                minSize=(16, 16)
+                minSize=(20, 20)
             )
-            face_list.extend(list(faces))
-
-            # If not found on CLAHE, try raw gray
-            if len(face_list) == 0:
-                faces = detector_alt2.detectMultiScale(
-                    gray,
-                    scaleFactor=1.08,
-                    minNeighbors=3,
-                    minSize=(16, 16)
-                )
+            if len(faces) > 0:
                 face_list.extend(list(faces))
+                break
 
-        # 2. Fallback to frontal face default cascade if alt2 missed
-        if len(face_list) == 0 and self.face_cascade_default is not None:
-            faces = self.face_cascade_default.detectMultiScale(
-                gray_clahe,
+            faces = det.detectMultiScale(
+                gray,
                 scaleFactor=1.08,
                 minNeighbors=3,
-                minSize=(16, 16)
+                minSize=(20, 20)
             )
-            face_list.extend(list(faces))
+            if len(faces) > 0:
+                face_list.extend(list(faces))
+                break
 
-        # 3. If no frontal face, check profile face (left and right)
+        # 2. Profile faces (normal and flipped)
         if len(face_list) == 0 and self.profile_cascade is not None:
             profiles = self.profile_cascade.detectMultiScale(
                 gray_clahe,
                 scaleFactor=1.08,
                 minNeighbors=3,
-                minSize=(16, 16)
+                minSize=(20, 20)
             )
-            face_list.extend(list(profiles))
-
-            if len(face_list) == 0:
+            if len(profiles) > 0:
+                face_list.extend(list(profiles))
+            else:
                 flipped = cv2.flip(gray_clahe, 1)
                 flipped_profiles = self.profile_cascade.detectMultiScale(
                     flipped,
                     scaleFactor=1.08,
                     minNeighbors=3,
-                    minSize=(16, 16)
+                    minSize=(20, 20)
                 )
-                face_list.extend(list(flipped_profiles))
+                if len(flipped_profiles) > 0:
+                    face_list.extend(list(flipped_profiles))
+
+        # 3. Eye pair detection in upper region
+        if len(face_list) == 0 and self.eye_cascade is not None:
+            top_gray = gray_clahe[:int(gray_clahe.shape[0] * 0.65), :]
+            eyes = self.eye_cascade.detectMultiScale(top_gray, scaleFactor=1.10, minNeighbors=4, minSize=(14, 14))
+            if len(eyes) >= 2:
+                return {
+                    "category": "portrait",
+                    "curated": True,
+                    "confidence": 0.88,
+                    "face_count": 1,
+                    "nature_score": 0.05,
+                    "subtype": "portrait",
+                    "tags": ["portrait", "Portrait", "1 face"],
+                    "reason": "Detected human facial eye features"
+                }
 
         if len(face_list) > 0:
             face_count = len(face_list)
-            total_img_area = bgr.shape[0] * bgr.shape[1]
-
-            max_face_area = max(w * h for (x, y, w, h) in face_list)
+            total_img_area = face_img.shape[0] * face_img.shape[1]
+            max_face_area = max(fw * fh for (fx, fy, fw, fh) in face_list)
             face_area_pct = max_face_area / float(total_img_area)
 
             if face_count >= 3:
                 subtype = "group_portrait"
                 tag_label = "Group Portrait"
-            elif face_area_pct >= 0.10:
+            elif face_area_pct >= 0.08:
                 subtype = "close_up"
                 tag_label = "Close-up Portrait"
             else:
                 subtype = "portrait"
                 tag_label = "Portrait"
 
-            confidence = min(0.99, 0.82 + (0.04 * min(3, face_count)) + (0.10 * min(1.0, face_area_pct * 5)))
+            confidence = min(0.99, 0.84 + (0.04 * min(3, face_count)))
 
             return {
                 "category": "portrait",
@@ -246,13 +276,13 @@ class VisionCurator:
                 "reason": f"Detected {face_count} human face(s)"
             }
 
-        # 4. Fallback: Upper Body / Figure Detection (for people looking away, wearing hats/sunglasses, or half-body shots)
+        # 4. Upper body / Figure detection
         if self.upperbody_cascade is not None:
             bodies = self.upperbody_cascade.detectMultiScale(
                 gray_clahe,
                 scaleFactor=1.08,
                 minNeighbors=3,
-                minSize=(32, 32)
+                minSize=(36, 36)
             )
             if len(bodies) > 0:
                 body_count = len(bodies)
@@ -267,42 +297,64 @@ class VisionCurator:
                     "reason": f"Detected {body_count} person / portrait figure(s)"
                 }
 
+        # 5. Full body standing figure detection
+        if self.fullbody_cascade is not None:
+            full_bodies = self.fullbody_cascade.detectMultiScale(
+                gray_clahe,
+                scaleFactor=1.08,
+                minNeighbors=3,
+                minSize=(40, 40)
+            )
+            if len(full_bodies) > 0:
+                body_count = len(full_bodies)
+                return {
+                    "category": "portrait",
+                    "curated": True,
+                    "confidence": 0.82,
+                    "face_count": body_count,
+                    "nature_score": 0.10,
+                    "subtype": "portrait",
+                    "tags": ["portrait", "Person", f"{body_count} person{'s' if body_count > 1 else ''}"],
+                    "reason": f"Detected {body_count} standing / full figure(s)"
+                }
+
         return None
 
     def _detect_document_or_screenshot(self, bgr: "np.ndarray", orig_w: int = 320, orig_h: int = 240) -> Optional[Dict[str, Any]]:
-        """Identifies text screenshots, white paper documents, receipts, and flat UI."""
+        """Identifies text screenshots, white paper documents, receipts, flat UI, and solid colors."""
+        h, w = bgr.shape[:2]
+        total_pixels = float(h * w)
+
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+        hist, _ = np.histogram(gray, bins=32, range=(0, 256))
+        max_bin_ratio = np.max(hist) / total_pixels
+
+        # Dominant flat color with no texture (solid background, flat UI, wallpaper, painted walls)
+        if max_bin_ratio > 0.45 and lap_var < 50.0:
+            return {
+                "category": "other",
+                "curated": False,
+                "confidence": 0.94,
+                "face_count": 0,
+                "nature_score": 0.01,
+                "subtype": "flat_graphic",
+                "tags": ["other", "Flat Graphic / UI"],
+                "reason": f"Flat uniform color / low texture (ratio={max_bin_ratio:.2f}, var={lap_var:.1f})"
+            }
+
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         sat = hsv[:, :, 1]
-        val = hsv[:, :, 2]
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-
-        total_pixels = bgr.shape[0] * bgr.shape[1]
-
-        # 1. Background Uniformity (Peak histogram ratio)
-        hist, _ = np.histogram(gray, bins=32, range=(0, 256))
-        max_bin_ratio = np.max(hist) / float(total_pixels)
-        dominant_val = np.argmax(hist) * 8
-
-        # White document / receipt background (dominant value > 210 with >= 35% pixels)
-        is_white_doc = (dominant_val >= 200 and max_bin_ratio >= 0.35)
-
-        # Dark mode screenshot (dominant value < 35 with >= 40% pixels)
-        is_dark_screen = (dominant_val <= 35 and max_bin_ratio >= 0.40)
-
-        # 2. Text Edge Characteristics (Horizontal vs Vertical gradients)
-        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-        grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-        edge_energy_x = np.mean(np.abs(grad_x))
-        edge_energy_y = np.mean(np.abs(grad_y))
-
         mean_sat = np.mean(sat) / 255.0
 
-        # Aspect ratio check (common mobile screenshot ratios ~9:16 = 0.56 or ~19.5:9 = 0.46)
-        aspect_ratio = min(orig_w, orig_h) / max(orig_w, orig_h)
-        is_phone_aspect = (aspect_ratio <= 0.60)
+        dominant_val = np.argmax(hist) * 8
+        is_white_doc = (dominant_val >= 195 and max_bin_ratio >= 0.30)
+        is_dark_screen = (dominant_val <= 35 and max_bin_ratio >= 0.35)
 
-        # Classification rules for document / screenshot
-        if (is_white_doc or is_dark_screen) and mean_sat < 0.15:
+        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        edge_energy_x = np.mean(np.abs(grad_x))
+
+        if (is_white_doc or is_dark_screen) and mean_sat < 0.18:
             return {
                 "category": "other",
                 "curated": False,
@@ -311,10 +363,12 @@ class VisionCurator:
                 "nature_score": 0.02,
                 "subtype": "document",
                 "tags": ["other", "Document / Text"],
-                "reason": "Dominant flat background with low color saturation"
+                "reason": "Document / text / screenshot background"
             }
 
-        if is_phone_aspect and max_bin_ratio >= 0.30 and mean_sat < 0.20:
+        aspect_ratio = min(orig_w, orig_h) / max(orig_w, orig_h)
+        is_phone_aspect = (aspect_ratio <= 0.60)
+        if is_phone_aspect and max_bin_ratio >= 0.28 and mean_sat < 0.22:
             return {
                 "category": "other",
                 "curated": False,
@@ -326,8 +380,7 @@ class VisionCurator:
                 "reason": "Phone screen aspect ratio with UI flat colors"
             }
 
-        # Monochromatic text with very low saturation (< 0.08) and high text edges
-        if mean_sat < 0.08 and edge_energy_x > 18.0:
+        if mean_sat < 0.08 and edge_energy_x > 14.0:
             return {
                 "category": "other",
                 "curated": False,
@@ -342,133 +395,131 @@ class VisionCurator:
         return None
 
     def _detect_nature_scene(self, bgr: "np.ndarray") -> Dict[str, Any]:
-        """Analyzes color palettes and spatial layout for landscapes and nature."""
+        """Analyzes color palettes, texture, and spatial layout for landscapes and nature."""
+        h, w = bgr.shape[:2]
+        total_pixels = float(h * w)
+
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-        H = hsv[:, :, 0] # 0..180
-        S = hsv[:, :, 1] # 0..255
-        V = hsv[:, :, 2] # 0..255
+        H = hsv[:, :, 0]
+        S = hsv[:, :, 1]
+        V = hsv[:, :, 2]
+        B, G, R = bgr[:, :, 0], bgr[:, :, 1], bgr[:, :, 2]
 
-        total_pixels = float(bgr.shape[0] * bgr.shape[1])
-
-        # 1. Foliage / Greenery (Hue 35..85, moderate saturation and value)
-        foliage_mask = (H >= 35) & (H <= 85) & (S >= 40) & (V >= 35)
+        # 1. Foliage / Greenery: Must be truly green (G > R*0.95 and G > B) with leaf hue (35..85)
+        foliage_mask = (H >= 35) & (H <= 85) & (S >= 35) & (V >= 35) & (G > R * 0.95) & (G > B)
         foliage_ratio = np.count_nonzero(foliage_mask) / total_pixels
 
-        # 2. Sky & Water Blue (Hue 90..130, value > 60)
-        sky_water_mask = (H >= 90) & (H <= 130) & (S >= 25) & (V >= 55)
-        sky_water_ratio = np.count_nonzero(sky_water_mask) / total_pixels
+        # 2. Sky & Water: Sky at top (B dominant, V >= 65), water throughout (B > R)
+        top_half_bgr = bgr[:int(h * 0.55), :, :]
+        top_pixels = float(top_half_bgr.shape[0] * top_half_bgr.shape[1])
+        top_hsv = hsv[:int(h * 0.55), :, :]
 
-        # 3. Sunset / Golden Hour / Warm Earth (Hue 0..22 or 165..180, high saturation)
-        sunset_mask = ((H <= 22) | (H >= 165)) & (S >= 75) & (V >= 60)
-        sunset_ratio = np.count_nonzero(sunset_mask) / total_pixels
+        sky_mask = (top_hsv[:,:,0] >= 90) & (top_hsv[:,:,0] <= 130) & (top_hsv[:,:,1] >= 25) & (top_hsv[:,:,2] >= 65) & (top_half_bgr[:,:,0] > top_half_bgr[:,:,2])
+        top_sky_ratio = np.count_nonzero(sky_mask) / top_pixels
 
-        # 4. Floral Vibrant Blooms (Pink, Magenta, Yellow, Purple)
-        floral_mask = ((H >= 140) & (H <= 165) & (S >= 85)) | ((H >= 22) & (H <= 35) & (S >= 95))
+        water_mask = (hsv[:,:,0] >= 90) & (hsv[:,:,0] <= 135) & (hsv[:,:,1] >= 30) & (hsv[:,:,2] >= 45) & (B > R)
+        water_ratio = np.count_nonzero(water_mask) / total_pixels
+
+        # 3. Sunset / Golden Hour Sky: In TOP 65%, BRIGHT (V >= 170), warm hues (0..24 or 165..180), warm dominant (R > B * 1.2)
+        top_sunset_mask = ((top_hsv[:,:,0] <= 24) | (top_hsv[:,:,0] >= 165)) & (top_hsv[:,:,1] >= 60) & (top_hsv[:,:,2] >= 170) & (top_half_bgr[:,:,2] > top_half_bgr[:,:,0] * 1.2)
+        sunset_sky_ratio = np.count_nonzero(top_sunset_mask) / top_pixels
+
+        # 4. Floral Blooms: Vibrant pink/purple/yellow with some green foliage present
+        floral_mask = (((H >= 140) & (H <= 165) & (S >= 90) & (V >= 100)) | ((H >= 22) & (H <= 35) & (S >= 100) & (V >= 120)))
         floral_ratio = np.count_nonzero(floral_mask) / total_pixels
 
-        # 5. Hasler & Süsstrunk Colorfulness Metric
-        colorfulness = self._calc_colorfulness(bgr)
-        norm_colorfulness = min(0.20, colorfulness / 200.0)
+        # 5. Spatial Horizon Layout: Sky at top, Ground/Greenery at bottom
+        bot_half_bgr = bgr[int(h * 0.50):, :, :]
+        bot_half_hsv = hsv[int(h * 0.50):, :, :]
+        bot_pixels = float(bot_half_bgr.shape[0] * bot_half_bgr.shape[1])
+        bot_green = np.count_nonzero((bot_half_hsv[:,:,0] >= 35) & (bot_half_hsv[:,:,0] <= 85) & (bot_half_bgr[:,:,1] > bot_half_bgr[:,:,2])) / bot_pixels
 
-        # 6. Spatial Composition Heuristic: Sky at top, Earth/Vegetation at bottom
-        top_half_hsv = hsv[:120, :, :]
-        bot_half_hsv = hsv[120:, :, :]
-        top_pixels = 120.0 * 320.0
+        horizon_landscape = (top_sky_ratio >= 0.20 and bot_green >= 0.15) or (sunset_sky_ratio >= 0.18 and bot_green >= 0.10)
 
-        top_sky = np.count_nonzero((top_half_hsv[:,:,0] >= 90) & (top_half_hsv[:,:,0] <= 130) & (top_half_hsv[:,:,2] >= 60)) / top_pixels
-        bot_green = np.count_nonzero((bot_half_hsv[:,:,0] >= 35) & (bot_half_hsv[:,:,0] <= 85) & (bot_half_hsv[:,:,1] >= 40)) / top_pixels
-
-        spatial_bonus = 0.0
-        if top_sky >= 0.25 and bot_green >= 0.20:
-            spatial_bonus = 0.18 # Definite horizon landscape
-        elif top_sky >= 0.35:
-            spatial_bonus = 0.12 # Open sky landscape
-        elif bot_green >= 0.35:
-            spatial_bonus = 0.12 # Forest / ground scenery
-
-        # Total Nature Score
-        nature_score = (
-            (foliage_ratio * 1.5) +
-            (sky_water_ratio * 1.3) +
-            (sunset_ratio * 1.3) +
-            (floral_ratio * 1.8) +
-            norm_colorfulness +
-            spatial_bonus
-        )
-
-        # Threshold evaluation
-        is_nature = (
-            nature_score >= 0.20 or
-            foliage_ratio >= 0.14 or
-            sky_water_ratio >= 0.18 or
-            sunset_ratio >= 0.16 or
-            floral_ratio >= 0.08
-        )
-
-        if is_nature:
-            # Determine dominant natural subtype
-            scores = {
-                "foliage": foliage_ratio * 1.5,
-                "water_beach": sky_water_ratio * 1.3,
-                "sky_sunset": sunset_ratio * 1.3,
-                "flowers": floral_ratio * 1.8,
-                "landscape": spatial_bonus * 1.2
-            }
-            top_subtype = max(scores, key=scores.get)
-
-            labels = {
-                "foliage": "Greenery & Foliage",
-                "water_beach": "Ocean & Water",
-                "sky_sunset": "Sunset & Sky",
-                "flowers": "Floral & Blooms",
-                "landscape": "Scenic Landscape"
-            }
-            tag_label = labels.get(top_subtype, "Nature Scenery")
-            confidence = min(0.98, max(0.65, nature_score * 1.8))
-
+        # Threshold Decision
+        if horizon_landscape:
             return {
                 "category": "nature",
                 "curated": True,
-                "confidence": round(confidence, 2),
+                "confidence": 0.95,
                 "face_count": 0,
-                "nature_score": round(nature_score, 3),
-                "subtype": top_subtype,
-                "tags": ["nature", tag_label],
-                "reason": f"High natural scenery indicators (Foliage: {foliage_ratio:.0%}, Sky/Water: {sky_water_ratio:.0%}, Warm: {sunset_ratio:.0%})"
+                "nature_score": round(max(top_sky_ratio, sunset_sky_ratio) + bot_green, 2),
+                "subtype": "landscape",
+                "tags": ["nature", "Scenic Landscape"],
+                "reason": f"Scenic horizon landscape (Sky: {max(top_sky_ratio, sunset_sky_ratio):.0%}, Ground: {bot_green:.0%})"
             }
 
-        # Otherwise: Indoor, cluttered, or ambiguous
+        if foliage_ratio >= 0.18 and lap_var > 30.0:
+            return {
+                "category": "nature",
+                "curated": True,
+                "confidence": min(0.98, round(0.70 + foliage_ratio, 2)),
+                "face_count": 0,
+                "nature_score": round(foliage_ratio, 2),
+                "subtype": "foliage",
+                "tags": ["nature", "Greenery & Foliage"],
+                "reason": f"Greenery & foliage (Green: {foliage_ratio:.0%}, Texture: {lap_var:.0f})"
+            }
+
+        if top_sky_ratio >= 0.30:
+            return {
+                "category": "nature",
+                "curated": True,
+                "confidence": 0.92,
+                "face_count": 0,
+                "nature_score": round(top_sky_ratio, 2),
+                "subtype": "sky",
+                "tags": ["nature", "Open Sky Scenery"],
+                "reason": f"Open sky scenery ({top_sky_ratio:.0%})"
+            }
+
+        if water_ratio >= 0.25:
+            return {
+                "category": "nature",
+                "curated": True,
+                "confidence": 0.90,
+                "face_count": 0,
+                "nature_score": round(water_ratio, 2),
+                "subtype": "water",
+                "tags": ["nature", "Ocean & Water"],
+                "reason": f"Body of water / ocean ({water_ratio:.0%})"
+            }
+
+        if sunset_sky_ratio >= 0.20:
+            return {
+                "category": "nature",
+                "curated": True,
+                "confidence": 0.94,
+                "face_count": 0,
+                "nature_score": round(sunset_sky_ratio, 2),
+                "subtype": "sunset",
+                "tags": ["nature", "Sunset & Golden Hour"],
+                "reason": f"Glowing sunset / golden hour sky ({sunset_sky_ratio:.0%})"
+            }
+
+        if floral_ratio >= 0.10 and foliage_ratio >= 0.05:
+            return {
+                "category": "nature",
+                "curated": True,
+                "confidence": 0.92,
+                "face_count": 0,
+                "nature_score": round(floral_ratio + foliage_ratio, 2),
+                "subtype": "flowers",
+                "tags": ["nature", "Floral & Blooms"],
+                "reason": f"Floral blooms with natural greenery ({floral_ratio:.0%})"
+            }
+
+        # Otherwise: Indoor, clutter, random objects, etc.
         return {
             "category": "other",
             "curated": False,
-            "confidence": round(1.0 - min(0.8, nature_score), 2),
+            "confidence": 0.88,
             "face_count": 0,
-            "nature_score": round(nature_score, 3),
+            "nature_score": round(max(foliage_ratio, top_sky_ratio, sunset_sky_ratio), 2),
             "subtype": "indoor_or_clutter",
             "tags": ["other", "Indoor / Clutter"],
             "reason": "Insufficient portrait or natural scenery scores"
         }
-
-    @staticmethod
-    def _calc_colorfulness(bgr: "np.ndarray") -> float:
-        """Computes Hasler & Süsstrunk natural colorfulness metric."""
-        try:
-            B = bgr[:, :, 0].astype(float)
-            G = bgr[:, :, 1].astype(float)
-            R = bgr[:, :, 2].astype(float)
-
-            rg = np.abs(R - G)
-            yb = np.abs(0.5 * (R + G) - B)
-
-            std_rg = np.std(rg)
-            mean_rg = np.mean(rg)
-
-            std_yb = np.std(yb)
-            mean_yb = np.mean(yb)
-
-            std_rgyb = np.sqrt(std_rg ** 2 + std_yb ** 2)
-            mean_rgyb = np.sqrt(mean_rg ** 2 + mean_yb ** 2)
-
-            return float(std_rgyb + 0.3 * mean_rgyb)
-        except Exception:
-            return 0.0

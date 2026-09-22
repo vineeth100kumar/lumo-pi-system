@@ -80,22 +80,21 @@ class MemoriesService:
                                 except Exception:
                                     pass
                         if "category" not in p:
-                            p["category"] = "nature"
-                            p["curated"] = True
+                            p["category"] = "other"
+                            p["curated"] = False
 
                     # Enforce max quota on existing library
                     while len(self.photos) > self.max_photos:
                         old = self.photos.pop()
                         self._delete_disk_files(old)
 
-                    self.cv_version = data.get("cv_version", 1)
+                    self.cv_version = 3
 
                     logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
 
-                    # Auto-run curation scan if upgraded vision models (cv_version < 2) detected
-                    if self.cv_version < 2 and getattr(self.curator, "is_available", False) and self.photos:
-                        logger.info("Upgraded OpenCV face cascades detected (v2). Auto-scanning library now...")
-                        self.cv_version = 2
+                    # ✨ Run curation scan on library on boot to ensure ALL photos are accurately classified
+                    if getattr(self.curator, "is_available", False) and self.photos:
+                        logger.info("✨ Vision AI active: Scanning and classifying library photos for desk curation...")
                         self.scan_and_curate_all()
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
@@ -114,7 +113,7 @@ class MemoriesService:
                     "replace_duplicates": self.replace_duplicates,
                     "gif_loops": self.gif_loops,
                     "curate_display": self.curate_display,
-                    "cv_version": getattr(self, "cv_version", 2),
+                    "cv_version": 3,
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
@@ -440,7 +439,7 @@ class MemoriesService:
                 caption = str(caption).strip()[:24]
 
             # Analyze image content with VisionCurator (Portraits & Nature classification)
-            curation_res = self.curator.classify(display_img)
+            curation_res = self.curator.classify(raw_img if not is_gif else display_img)
 
             # Pre-render binary strips for all frames (12 strips per frame)
             all_frame_strips = [self._render_frame_strips(f) for f in frames_320]
@@ -654,7 +653,7 @@ class MemoriesService:
         curated = [
             p for p in self.photos
             if (p.get("curated_override") is True) or
-               (p.get("curated_override") is not False and p.get("category", "nature") in ("portrait", "nature"))
+               (p.get("curated_override") is not False and p.get("category", "other") in ("portrait", "nature"))
         ]
         # Graceful fallback: if no photos match, display all photos rather than black screen
         return curated if curated else self.photos
@@ -697,8 +696,8 @@ class MemoriesService:
                 try:
                     with Image.open(target_path) as img:
                         res = self.curator.classify(img)
-                        p["category"] = res.get("category", "nature")
-                        p["curated"] = res.get("curated", True)
+                        p["category"] = res.get("category", "other")
+                        p["curated"] = res.get("curated", False)
                         p["face_count"] = res.get("face_count", 0)
                         p["nature_score"] = res.get("nature_score", 0.0)
                         p["subtype"] = res.get("subtype", "")
@@ -706,14 +705,19 @@ class MemoriesService:
                         p["classification_reason"] = res.get("reason", "")
                 except Exception as e:
                     logger.warning(f"Failed to classify photo {p.get('id')}: {e}")
+                    p["category"] = "other"
+                    p["curated"] = False
+            else:
+                p["category"] = "other"
+                p["curated"] = False
 
-            cat = p.get("category", "nature")
+            cat = p.get("category", "other")
             counts[cat] = counts.get(cat, 0) + 1
-            if p.get("curated", True):
+            if p.get("curated", False):
                 counts["curated"] += 1
 
         self._save_index()
-        logger.info(f"Retroactive curation scan complete: {counts}")
+        logger.info(f"✨ Vision AI Library Curation complete: {counts['portrait']} Portraits, {counts['nature']} Nature scenes, {counts['other']} Filtered from desk. ({counts['curated']}/{counts['total']} displayable on desk)")
         return counts
 
     def set_photo_category_override(self, photo_id: str, category: str) -> Optional[Dict[str, Any]]:
