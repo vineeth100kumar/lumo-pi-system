@@ -344,6 +344,10 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Could not start watchdog observer: {e}")
             observer = None
 
+    # Background verification: ensure library photos are curated
+    if memories.photos:
+        asyncio.create_task(asyncio.to_thread(memories.scan_and_curate_all))
+
     voice_service.update_services({
         "hub": hub,
         "anim_engine": anim_engine,

@@ -37,45 +37,61 @@ class VisionCurator:
         self.eye_cascade = None
         self._init_models()
 
+    def _find_cascade(self, filename: str) -> Optional[Any]:
+        if not OPENCV_AVAILABLE:
+            return None
+        candidates = []
+        # 1. cv2.data.haarcascades
+        haar_dir = getattr(cv2, "data", None)
+        if haar_dir and hasattr(haar_dir, "haarcascades"):
+            candidates.append(os.path.join(haar_dir.haarcascades, filename))
+            candidates.append(str(haar_dir.haarcascades) + filename)
+        # 2. cv2 package directory
+        if hasattr(cv2, "__file__") and cv2.__file__:
+            cv2_dir = os.path.dirname(cv2.__file__)
+            candidates.append(os.path.join(cv2_dir, "data", filename))
+            candidates.append(os.path.join(cv2_dir, filename))
+        # 3. System Linux / Raspberry Pi OS locations
+        for base in ("/usr/share/opencv4/haarcascades", "/usr/share/opencv/haarcascades", "/usr/local/share/opencv4/haarcascades"):
+            candidates.append(os.path.join(base, filename))
+
+        for p in candidates:
+            if os.path.exists(p):
+                try:
+                    c = cv2.CascadeClassifier(p)
+                    if c is not None and not c.empty():
+                        return c
+                except Exception:
+                    pass
+        return None
+
     def _init_models(self):
         if not OPENCV_AVAILABLE:
             return
         try:
-            haar_dir = getattr(cv2, "data", None)
-            if haar_dir and hasattr(haar_dir, "haarcascades"):
-                base_dir = haar_dir.haarcascades
-                alt2_path = os.path.join(base_dir, "haarcascade_frontalface_alt2.xml")
-                default_path = os.path.join(base_dir, "haarcascade_frontalface_default.xml")
-                alt_path = os.path.join(base_dir, "haarcascade_frontalface_alt.xml")
-                profile_path = os.path.join(base_dir, "haarcascade_profileface.xml")
-                upperbody_path = os.path.join(base_dir, "haarcascade_upperbody.xml")
-                fullbody_path = os.path.join(base_dir, "haarcascade_fullbody.xml")
-                eye_path = os.path.join(base_dir, "haarcascade_eye.xml")
+            self.face_cascade_alt2 = self._find_cascade("haarcascade_frontalface_alt2.xml")
+            self.face_cascade_default = self._find_cascade("haarcascade_frontalface_default.xml")
+            self.face_cascade_alt = self._find_cascade("haarcascade_frontalface_alt.xml")
+            self.profile_cascade = self._find_cascade("haarcascade_profileface.xml")
+            self.upperbody_cascade = self._find_cascade("haarcascade_upperbody.xml")
+            self.fullbody_cascade = self._find_cascade("haarcascade_fullbody.xml")
+            self.eye_cascade = self._find_cascade("haarcascade_eye.xml")
 
-                if os.path.exists(alt2_path):
-                    self.face_cascade_alt2 = cv2.CascadeClassifier(alt2_path)
-                if os.path.exists(default_path):
-                    self.face_cascade_default = cv2.CascadeClassifier(default_path)
-                if os.path.exists(alt_path):
-                    self.face_cascade_alt = cv2.CascadeClassifier(alt_path)
-                if os.path.exists(profile_path):
-                    self.profile_cascade = cv2.CascadeClassifier(profile_path)
-                if os.path.exists(upperbody_path):
-                    self.upperbody_cascade = cv2.CascadeClassifier(upperbody_path)
-                if os.path.exists(fullbody_path):
-                    self.fullbody_cascade = cv2.CascadeClassifier(fullbody_path)
-                if os.path.exists(eye_path):
-                    self.eye_cascade = cv2.CascadeClassifier(eye_path)
+            self.face_cascade = self.face_cascade_alt2 or self.face_cascade_default or self.face_cascade_alt
 
-                self.face_cascade = self.face_cascade_alt2 or self.face_cascade_default
+            loaded = sum(1 for c in (self.face_cascade_alt2, self.face_cascade_default, self.face_cascade_alt,
+                                    self.profile_cascade, self.upperbody_cascade, self.fullbody_cascade, self.eye_cascade) if c is not None)
 
-                logger.info("VisionCurator initialized with OpenCV Haar face detection cascades.")
+            if loaded > 0:
+                logger.info(f"VisionCurator initialized: {loaded} face/body detection models loaded.")
+            else:
+                logger.warning("VisionCurator: No Haar cascade XMLs found. Face detection inactive, but Nature & Document curation active.")
         except Exception as e:
             logger.warning(f"Could not load Haar cascades: {e}")
 
     @property
     def is_available(self) -> bool:
-        return bool(OPENCV_AVAILABLE and (self.face_cascade is not None or self.face_cascade_alt2 is not None or self.face_cascade_default is not None))
+        return bool(OPENCV_AVAILABLE)
 
     def classify(self, img_input: Union[Image.Image, bytes, "np.ndarray"]) -> Dict[str, Any]:
         """

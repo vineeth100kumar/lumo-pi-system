@@ -93,8 +93,8 @@ class MemoriesService:
                     logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
 
                     # ✨ Run curation scan on library on boot to ensure ALL photos are accurately classified
-                    if getattr(self.curator, "is_available", False) and self.photos:
-                        logger.info("✨ Vision AI active: Scanning and classifying library photos for desk curation...")
+                    if self.photos:
+                        logger.info(f"✨ Vision AI active: Scanning and classifying {len(self.photos)} library photos for desk curation...")
                         self.scan_and_curate_all()
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
