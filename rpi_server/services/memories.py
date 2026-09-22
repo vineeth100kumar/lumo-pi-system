@@ -725,8 +725,11 @@ class MemoriesService:
         portraits = sum(1 for p in self.photos if p.get("category") == "portrait")
         nature = sum(1 for p in self.photos if p.get("category") == "nature")
         other = sum(1 for p in self.photos if p.get("category") == "other")
+        is_cv = getattr(self.curator, "is_available", False)
         return {
             "curate_display": self.curate_display,
+            "opencv_available": is_cv,
+            "engine": "OpenCV Haar Cascades + Nature Engine" if is_cv else "Pass-Through (OpenCV missing)",
             "total": len(self.photos),
             "total_photos": len(self.photos),
             "curated_displayable": len(displayable),

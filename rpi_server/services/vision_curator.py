@@ -50,6 +50,10 @@ class VisionCurator:
         except Exception as e:
             logger.warning(f"Could not load Haar cascades: {e}")
 
+    @property
+    def is_available(self) -> bool:
+        return bool(OPENCV_AVAILABLE and self.face_cascade is not None)
+
     def classify(self, img_input: Union[Image.Image, bytes, "np.ndarray"]) -> Dict[str, Any]:
         """
         Classifies an image into:
