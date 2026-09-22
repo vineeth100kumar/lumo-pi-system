@@ -88,7 +88,15 @@ class MemoriesService:
                         old = self.photos.pop()
                         self._delete_disk_files(old)
 
+                    self.cv_version = data.get("cv_version", 1)
+
                     logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
+
+                    # Auto-run curation scan if upgraded vision models (cv_version < 2) detected
+                    if self.cv_version < 2 and getattr(self.curator, "is_available", False) and self.photos:
+                        logger.info("Upgraded OpenCV face cascades detected (v2). Auto-scanning library now...")
+                        self.cv_version = 2
+                        self.scan_and_curate_all()
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
                 self.photos = []
@@ -106,6 +114,7 @@ class MemoriesService:
                     "replace_duplicates": self.replace_duplicates,
                     "gif_loops": self.gif_loops,
                     "curate_display": self.curate_display,
+                    "cv_version": getattr(self, "cv_version", 2),
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
