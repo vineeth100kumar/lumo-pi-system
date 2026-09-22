@@ -952,17 +952,31 @@ async def push_memory_to_display(request: Request):
     return {"ok": True}
 
 @app.post("/api/memories/curate/scan")
-async def scan_and_curate_library():
-    counts = memories.scan_and_curate_all()
+async def scan_and_curate_library(request: Request):
+    force = False
+    try:
+        data = await request.json()
+        if isinstance(data, dict):
+            force = bool(data.get("force", False))
+    except Exception:
+        pass
+    if request.query_params.get("force", "").lower() in ("true", "1"):
+        force = True
+    counts = memories.scan_and_curate_all(force=force, reset_overrides=force)
     if current_screen == "MEMORY":
         await show_memory_current()
-    return {"ok": True, "counts": counts, "curation_stats": memories.get_curation_stats()}
+    return {
+        "ok": True,
+        "counts": counts,
+        "curation_stats": memories.get_curation_stats(),
+        "photos": memories.get_all_photos()
+    }
 
 @app.post("/api/memories/curate/override")
 async def override_photo_category(item: CurationOverride):
     updated = memories.set_photo_category_override(item.id, item.category)
     if not updated:
-        raise HTTPException(status_code=400, detail="Invalid photo ID or category (must be portrait, nature, or other)")
+        raise HTTPException(status_code=400, detail="Invalid photo ID or category (must be portrait, nature, other, or auto)")
     if current_screen == "MEMORY":
         await show_memory_current()
     return {"ok": True, "photo": updated, "curation_stats": memories.get_curation_stats()}

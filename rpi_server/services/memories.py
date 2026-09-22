@@ -83,19 +83,29 @@ class MemoriesService:
                             p["category"] = "other"
                             p["curated"] = False
 
+                        # Migration: clean up legacy boolean curated_override: False
+                        # which was set by early schemas and falsely blocked AI re-curation
+                        if p.get("curated_override") is False:
+                            p["curated_override"] = None
+                        elif p.get("curated_override") is True and p.get("category") not in ("portrait", "nature"):
+                            p["category"] = "portrait"
+                            p["curated"] = True
+
                     # Enforce max quota on existing library
                     while len(self.photos) > self.max_photos:
                         old = self.photos.pop()
                         self._delete_disk_files(old)
 
-                    self.cv_version = 3
+                    saved_cv = data.get("cv_version", 0)
+                    self.cv_version = 4
 
                     logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
 
                     # ✨ Run curation scan on library on boot to ensure ALL photos are accurately classified
                     if self.photos:
-                        logger.info(f"✨ Vision AI active: Scanning and classifying {len(self.photos)} library photos for desk curation...")
-                        self.scan_and_curate_all()
+                        force_rescan = (saved_cv < 4)
+                        logger.info(f"✨ Vision AI active: Scanning and classifying {len(self.photos)} library photos for desk curation (force_rescan={force_rescan})...")
+                        self.scan_and_curate_all(force=force_rescan)
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
                 self.photos = []
@@ -113,7 +123,7 @@ class MemoriesService:
                     "replace_duplicates": self.replace_duplicates,
                     "gif_loops": self.gif_loops,
                     "curate_display": self.curate_display,
-                    "cv_version": 3,
+                    "cv_version": self.cv_version,
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
@@ -652,8 +662,8 @@ class MemoriesService:
         # Filter to only portraits & nature (or photos with manual positive override)
         curated = [
             p for p in self.photos
-            if (p.get("curated_override") is True) or
-               (p.get("curated_override") is not False and p.get("category", "other") in ("portrait", "nature"))
+            if (p.get("curated_override") in ("portrait", "nature") or p.get("curated_override") is True) or
+               (p.get("curated_override") not in ("other", False) and p.get("category", "other") in ("portrait", "nature"))
         ]
         # Graceful fallback: if no photos match, display all photos rather than black screen
         return curated if curated else self.photos
@@ -677,11 +687,17 @@ class MemoriesService:
                 return p
         return None
 
-    def scan_and_curate_all(self) -> Dict[str, Any]:
+    def scan_and_curate_all(self, force: bool = False, reset_overrides: bool = False) -> Dict[str, Any]:
         """Retroactively analyzes and classifies all photos in library."""
         counts = {"total": len(self.photos), "curated": 0, "portrait": 0, "nature": 0, "other": 0}
         for p in self.photos:
-            if p.get("curated_override") is not None:
+            if reset_overrides:
+                p["curated_override"] = None
+            elif p.get("curated_override") is False:
+                p["curated_override"] = None
+
+            is_manual_override = (p.get("curated_override") in ("portrait", "nature", "other")) or (p.get("curated_override") is True)
+            if not force and is_manual_override:
                 cat = p.get("category", "other")
                 counts[cat] = counts.get(cat, 0) + 1
                 if p.get("curated"):
@@ -722,13 +738,34 @@ class MemoriesService:
 
     def set_photo_category_override(self, photo_id: str, category: str) -> Optional[Dict[str, Any]]:
         category = category.lower().strip()
-        if category not in ("portrait", "nature", "other"):
+        if category not in ("portrait", "nature", "other", "auto", "reset"):
             return None
         for p in self.photos:
             if p.get("id") == photo_id:
-                p["category"] = category
-                p["curated"] = (category in ("portrait", "nature"))
-                p["curated_override"] = (category in ("portrait", "nature"))
+                if category in ("auto", "reset"):
+                    p["curated_override"] = None
+                    lib_p = os.path.join(self.library_dir, p.get("filename", ""))
+                    thumb_p = os.path.join(self.thumbs_dir, p.get("thumb", ""))
+                    target_path = lib_p if os.path.exists(lib_p) else thumb_p
+                    if os.path.exists(target_path):
+                        try:
+                            with Image.open(target_path) as img:
+                                res = self.curator.classify(img)
+                                p["category"] = res.get("category", "other")
+                                p["curated"] = res.get("curated", False)
+                                p["face_count"] = res.get("face_count", 0)
+                                p["nature_score"] = res.get("nature_score", 0.0)
+                                p["subtype"] = res.get("subtype", "")
+                                p["classification_tags"] = res.get("tags", [])
+                                p["classification_reason"] = res.get("reason", "")
+                        except Exception:
+                            pass
+                else:
+                    p["category"] = category
+                    p["curated"] = (category in ("portrait", "nature"))
+                    p["curated_override"] = category
+                    p["classification_tags"] = [category, f"Manual {category.capitalize()}"]
+                    p["classification_reason"] = f"Manual user override to {category}"
                 self._save_index()
                 return p
         return None

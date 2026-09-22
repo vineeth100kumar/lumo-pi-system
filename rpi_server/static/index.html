@@ -2471,7 +2471,7 @@
     await fetchMemories();
   }
 
-  async function scanAndCurateLibrary() {
+  async function scanAndCurateLibrary(force = true) {
     const btnTray = document.getElementById("btnScanCurate");
     const btnBanner = document.getElementById("btnBannerScan");
     [btnTray, btnBanner].forEach(b => {
@@ -2485,11 +2485,11 @@
     if (statusSub) statusSub.textContent = `⏳ Analyzing ${cachedMemories.length} photos with OpenCV Haar Cascades & Nature Color Engine...`;
 
     try {
-      const res = await postApi("/api/memories/curate/scan");
+      const res = await postApi("/api/memories/curate/scan?force=" + (force ? "true" : "false"), { force });
       if (res && res.counts) {
         const toast = document.createElement("div");
         toast.style.cssText = "position:fixed; bottom:20px; right:20px; background:#141721; border:1px solid rgba(46,204,113,0.7); border-radius:12px; padding:14px 20px; color:#fff; font-size:0.85rem; z-index:9999; box-shadow:0 12px 36px rgba(0,0,0,0.7); display:flex; align-items:center; gap:10px;";
-        toast.innerHTML = `<span style="font-size:1.3rem;">✨</span> <div><div style="font-weight:700; color:#85e89d;">Vision AI Scan Complete!</div><div style="font-size:0.75rem; color:#ccc; margin-top:2px;">Scanned ${res.counts.total} photos: <b>👤 ${res.counts.portrait} Portraits</b>, <b>🌿 ${res.counts.nature} Nature</b>, <b>📁 ${res.counts.other} Filtered</b>.</div></div>`;
+        toast.innerHTML = `<span style="font-size:1.3rem;">✨</span> <div><div style="font-weight:700; color:#85e89d;">Vision AI Scan Complete!</div><div style="font-size:0.75rem; color:#ccc; margin-top:2px;">Scanned ${res.counts.total} photos: <b>👤 ${res.counts.portrait} Portraits</b>, <b>🌿 ${res.counts.nature} Nature</b>, <b>📁 ${res.counts.other} Filtered</b>. (${res.counts.curated}/${res.counts.total} on Desk)</div></div>`;
         document.body.appendChild(toast);
         setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 4500);
       }
@@ -2512,7 +2512,8 @@
     const cycleMap = {
       portrait: "nature",
       nature: "other",
-      other: "portrait"
+      other: "auto",
+      auto: "portrait"
     };
     const nextCat = cycleMap[currentCat] || "portrait";
     try {
