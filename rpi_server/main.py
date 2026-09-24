@@ -3,7 +3,14 @@ import asyncio
 import logging
 import socket
 import datetime
-import pytz
+try:
+    import pytz
+except ImportError:
+    pytz = None
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 import time
 from contextlib import asynccontextmanager
 
@@ -75,7 +82,12 @@ bt_manager = BluetoothManager()
 memories = MemoriesService()
 voice_service = VoiceService(hub=hub, anim_engine=anim_engine)
 scheduler = AsyncIOScheduler()
-tz = pytz.timezone("Asia/Kolkata")
+if pytz is not None:
+    tz = pytz.timezone("Asia/Kolkata")
+elif ZoneInfo is not None:
+    tz = ZoneInfo("Asia/Kolkata")
+else:
+    tz = datetime.timezone.utc
 
 last_interaction = time.time()
 
