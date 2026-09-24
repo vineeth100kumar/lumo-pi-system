@@ -44,6 +44,11 @@ class VisionCurator:
         import glob
         candidates = []
 
+        # 0. Repo-bundled cascades/ directory — always works regardless of OpenCV version/platform
+        #    Located at rpi_server/cascades/ (sibling of services/)
+        local_cascades = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cascades", filename)
+        candidates.append(os.path.normpath(local_cascades))
+
         # 1. cv2.data.haarcascades (works for standard pip install)
         haar_dir = getattr(cv2, "data", None)
         if haar_dir and hasattr(haar_dir, "haarcascades"):
