@@ -14,6 +14,7 @@ from io import BytesIO
 from typing import Optional
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import websockets
 try:
     from zeroconf.asyncio import AsyncZeroconf, AsyncServiceInfo
 except ImportError:

@@ -98,6 +98,8 @@ class MemoriesService:
                         self._delete_disk_files(old)
 
                     saved_cv = data.get("cv_version", 0)
+                    saved_cascade_count = data.get("cascade_count", -1)
+                    current_cascade_count = self.curator.loaded_cascade_count if self.curator else 0
                     self.cv_version = 4
 
                     logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
@@ -105,6 +107,10 @@ class MemoriesService:
                     # ✨ Run curation scan on library on boot to ensure ALL photos are accurately classified
                     if self.photos:
                         force_rescan = (saved_cv < 4)
+                        if not force_rescan and saved_cascade_count != current_cascade_count:
+                            # Cascade availability changed (e.g. 0→7 models now loaded) — re-classify all photos
+                            logger.info(f"  Cascade count changed ({saved_cascade_count}→{current_cascade_count}). Forcing full re-scan.")
+                            force_rescan = True
                         logger.info(f"✨ Vision AI active: Scanning and classifying {len(self.photos)} library photos for desk curation (force_rescan={force_rescan})...")
                         self.scan_and_curate_all(force=force_rescan)
             except Exception as e:
@@ -125,6 +131,7 @@ class MemoriesService:
                     "gif_loops": self.gif_loops,
                     "curate_display": self.curate_display,
                     "cv_version": self.cv_version,
+                    "cascade_count": self.curator.loaded_cascade_count if self.curator else 0,
                     "updated_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:

@@ -40,26 +40,56 @@ class VisionCurator:
     def _find_cascade(self, filename: str) -> Optional[Any]:
         if not OPENCV_AVAILABLE:
             return None
+        import sys
+        import glob
         candidates = []
-        # 1. cv2.data.haarcascades
+
+        # 1. cv2.data.haarcascades (works for standard pip install)
         haar_dir = getattr(cv2, "data", None)
         if haar_dir and hasattr(haar_dir, "haarcascades"):
-            candidates.append(os.path.join(haar_dir.haarcascades, filename))
-            candidates.append(str(haar_dir.haarcascades) + filename)
-        # 2. cv2 package directory
+            hd = str(haar_dir.haarcascades)
+            candidates.append(os.path.join(hd, filename))
+            # haarcascades may be a path that ends with separator already
+            if not hd.endswith(os.sep):
+                candidates.append(hd + os.sep + filename)
+
+        # 2. cv2 package directory (covers headless builds)
         if hasattr(cv2, "__file__") and cv2.__file__:
             cv2_dir = os.path.dirname(cv2.__file__)
             candidates.append(os.path.join(cv2_dir, "data", filename))
             candidates.append(os.path.join(cv2_dir, filename))
-        # 3. System Linux / Raspberry Pi OS locations
-        for base in ("/usr/share/opencv4/haarcascades", "/usr/share/opencv/haarcascades", "/usr/local/share/opencv4/haarcascades"):
+
+        # 3. Scan ALL python paths / site-packages for any cv2 installation
+        for sp in sys.path:
+            candidates.append(os.path.join(sp, "cv2", "data", filename))
+            candidates.append(os.path.join(sp, "cv2-python", "data", filename))
+
+        # 4. Glob-search inside the active venv (handles cv2/cv2.cpython-*.so sibling dirs)
+        for prefix in [os.path.dirname(os.path.dirname(sys.executable)), sys.prefix]:
+            for hit in glob.glob(os.path.join(prefix, "**", "cv2", "data", filename), recursive=True):
+                candidates.append(hit)
+            for hit in glob.glob(os.path.join(prefix, "**", "haarcascades", filename), recursive=True):
+                candidates.append(hit)
+
+        # 5. Standard Raspberry Pi OS / Debian system paths
+        for base in (
+            "/usr/share/opencv4/haarcascades",
+            "/usr/share/opencv/haarcascades",
+            "/usr/local/share/opencv4/haarcascades",
+            "/usr/share/java/opencv-4/haarcascades",
+        ):
             candidates.append(os.path.join(base, filename))
 
+        seen = set()
         for p in candidates:
+            if p in seen:
+                continue
+            seen.add(p)
             if os.path.exists(p):
                 try:
                     c = cv2.CascadeClassifier(p)
                     if c is not None and not c.empty():
+                        logger.debug(f"  Loaded cascade from: {p}")
                         return c
                 except Exception:
                     pass
@@ -85,13 +115,28 @@ class VisionCurator:
             if loaded > 0:
                 logger.info(f"VisionCurator initialized: {loaded} face/body detection models loaded.")
             else:
+                # Last-resort: try installing data files via opencv-python (not headless)
                 logger.warning("VisionCurator: No Haar cascade XMLs found. Face detection inactive, but Nature & Document curation active.")
+                logger.warning("  Fix: run 'pip install opencv-python' in your venv, or install 'python3-opencv' system package.")
         except Exception as e:
             logger.warning(f"Could not load Haar cascades: {e}")
 
     @property
     def is_available(self) -> bool:
         return bool(OPENCV_AVAILABLE)
+
+    @property
+    def loaded_cascade_count(self) -> int:
+        """How many Haar cascade models are currently loaded (0 means face detection inactive)."""
+        return sum(1 for c in (
+            getattr(self, "face_cascade_alt2", None),
+            getattr(self, "face_cascade_default", None),
+            getattr(self, "face_cascade_alt", None),
+            getattr(self, "profile_cascade", None),
+            getattr(self, "upperbody_cascade", None),
+            getattr(self, "fullbody_cascade", None),
+            getattr(self, "eye_cascade", None),
+        ) if c is not None)
 
     def classify(self, img_input: Union[Image.Image, bytes, "np.ndarray"]) -> Dict[str, Any]:
         """
