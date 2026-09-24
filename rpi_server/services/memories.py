@@ -47,6 +47,7 @@ class MemoriesService:
         # AI Vision Curation (Portraits & Nature Only)
         self.curator = VisionCurator()
         self.curate_display = True
+        self.cv_version = 4
 
         self._load_index()
 
@@ -280,7 +281,7 @@ class MemoriesService:
         """Computes a 64-bit difference hash (dhash) for perceptual duplicate detection."""
         try:
             small = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-            pixels = list(small.getdata())
+            pixels = list(small.get_flattened_data()) if hasattr(small, "get_flattened_data") else list(small.getdata())
             diff = []
             for row in range(8):
                 row_offset = row * 9
@@ -651,6 +652,8 @@ class MemoriesService:
             }
             for p in self.photos
         ]
+
+    get_all_photos = list_photos
 
     def get_displayable_photos(self) -> List[Dict[str, Any]]:
         """Returns photos eligible for display on the ESP32 desk screen."""

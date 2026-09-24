@@ -1,3 +1,4 @@
+import os
 import asyncio
 import logging
 import socket
@@ -13,8 +14,11 @@ from io import BytesIO
 from typing import Optional
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import websockets
-from zeroconf.asyncio import AsyncZeroconf, AsyncServiceInfo
+try:
+    from zeroconf.asyncio import AsyncZeroconf, AsyncServiceInfo
+except ImportError:
+    AsyncZeroconf = None
+    AsyncServiceInfo = None
 
 from config import WS_PORT, HTTP_PORT, HTTP_PLAIN_PORT, MDNS_NAME, SAGE_REFRESH_SECONDS
 from ws_hub import WSHub
@@ -164,20 +168,27 @@ def get_local_ips():
     return ips if ips else ["127.0.0.1"]
 
 async def start_mdns():
-    zc = AsyncZeroconf()
-    local_ips = get_local_ips()
+    if AsyncZeroconf is None or AsyncServiceInfo is None:
+        logger.info("zeroconf library not available; skipping mDNS broadcast.")
+        return None
+    try:
+        zc = AsyncZeroconf()
+        local_ips = get_local_ips()
 
-    info = AsyncServiceInfo(
-        "_http._tcp.local.",
-        f"{MDNS_NAME}._http._tcp.local.",
-        addresses=[socket.inet_aton(ip) for ip in local_ips],
-        port=HTTP_PORT,
-        properties={"path": "/"},
-        server=f"{MDNS_NAME}.local.",
-    )
-    await zc.async_register_service(info)
-    logger.info(f"mDNS registered: {MDNS_NAME}.local on {local_ips}")
-    return zc
+        info = AsyncServiceInfo(
+            "_http._tcp.local.",
+            f"{MDNS_NAME}._http._tcp.local.",
+            addresses=[socket.inet_aton(ip) for ip in local_ips],
+            port=HTTP_PORT,
+            properties={"path": "/"},
+            server=f"{MDNS_NAME}.local.",
+        )
+        await zc.async_register_service(info)
+        logger.info(f"mDNS registered: {MDNS_NAME}.local on {local_ips}")
+        return zc
+    except Exception as e:
+        logger.warning(f"Could not start mDNS service: {e}")
+        return None
 
 # ===================== CLOCK BROADCAST =====================
 async def broadcast_clock():
@@ -375,15 +386,19 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
     ws_server.close()
     await ws_server.wait_closed()
-    await zc.async_unregister_all_services()
-    await zc.async_close()
+    if zc:
+        await zc.async_unregister_all_services()
+        await zc.async_close()
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
 
 app = FastAPI(title="LUMO Controller", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 async def serve_index():
-    return FileResponse("static/index.html")
+    return FileResponse(INDEX_PATH)
 
 # ===================== REST APIS =====================
 
