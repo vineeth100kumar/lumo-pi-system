@@ -32,8 +32,6 @@ class VisionCurator:
         self.face_cascade_default = None
         self.face_cascade_alt = None
         self.profile_cascade = None
-        self.upperbody_cascade = None
-        self.fullbody_cascade = None
         self.eye_cascade = None
         self._init_models()
 
@@ -108,17 +106,15 @@ class VisionCurator:
             self.face_cascade_default = self._find_cascade("haarcascade_frontalface_default.xml")
             self.face_cascade_alt = self._find_cascade("haarcascade_frontalface_alt.xml")
             self.profile_cascade = self._find_cascade("haarcascade_profileface.xml")
-            self.upperbody_cascade = self._find_cascade("haarcascade_upperbody.xml")
-            self.fullbody_cascade = self._find_cascade("haarcascade_fullbody.xml")
             self.eye_cascade = self._find_cascade("haarcascade_eye.xml")
 
             self.face_cascade = self.face_cascade_alt2 or self.face_cascade_default or self.face_cascade_alt
 
             loaded = sum(1 for c in (self.face_cascade_alt2, self.face_cascade_default, self.face_cascade_alt,
-                                    self.profile_cascade, self.upperbody_cascade, self.fullbody_cascade, self.eye_cascade) if c is not None)
+                                    self.profile_cascade, self.eye_cascade) if c is not None)
 
             if loaded > 0:
-                logger.info(f"VisionCurator initialized: {loaded} face/body detection models loaded.")
+                logger.info(f"VisionCurator initialized: {loaded} face detection models loaded.")
             else:
                 # Last-resort: try installing data files via opencv-python (not headless)
                 logger.warning("VisionCurator: No Haar cascade XMLs found. Face detection inactive, but Nature & Document curation active.")
@@ -138,8 +134,6 @@ class VisionCurator:
             getattr(self, "face_cascade_default", None),
             getattr(self, "face_cascade_alt", None),
             getattr(self, "profile_cascade", None),
-            getattr(self, "upperbody_cascade", None),
-            getattr(self, "fullbody_cascade", None),
             getattr(self, "eye_cascade", None),
         ) if c is not None)
 
@@ -159,6 +153,7 @@ class VisionCurator:
                 "curated": True,
                 "confidence": 0.50,
                 "face_count": 0,
+                "face_boxes": [],
                 "nature_score": 0.50,
                 "subtype": "unclassified",
                 "tags": ["nature", "auto"],
@@ -174,6 +169,7 @@ class VisionCurator:
                     "curated": False,
                     "confidence": 0.0,
                     "face_count": 0,
+                    "face_boxes": [],
                     "nature_score": 0.0,
                     "subtype": "invalid",
                     "tags": ["invalid"],
@@ -185,6 +181,7 @@ class VisionCurator:
             # 2. Stage 1: Face & Portrait Detection (Multi-scale high sensitivity)
             portrait_res = self._detect_faces(bgr)
             if portrait_res is not None:
+                portrait_res.setdefault("face_boxes", [])
                 return portrait_res
 
             # Resize to standardized analysis resolution (320x240) for constant speed in Stages 2 & 3
@@ -193,10 +190,12 @@ class VisionCurator:
             # 3. Stage 2: Reject Documents, Screenshots, Flat Graphics & Low-Texture Surfaces
             doc_res = self._detect_document_or_screenshot(analysis_img, orig_w=w, orig_h=h)
             if doc_res is not None:
+                doc_res.setdefault("face_boxes", [])
                 return doc_res
 
             # 4. Stage 3: Nature & Scenic Landscape Detection
             nature_res = self._detect_nature_scene(analysis_img)
+            nature_res.setdefault("face_boxes", [])
             return nature_res
 
         except Exception as e:
@@ -206,6 +205,7 @@ class VisionCurator:
                 "curated": False,
                 "confidence": 0.30,
                 "face_count": 0,
+                "face_boxes": [],
                 "nature_score": 0.0,
                 "subtype": "error",
                 "tags": ["error"],
@@ -231,8 +231,33 @@ class VisionCurator:
             logger.error(f"Failed to convert image input to BGR: {e}")
         return None
 
+    @staticmethod
+    def _nms_boxes(boxes: list, iou_threshold: float = 0.3) -> list:
+        """Remove duplicate/overlapping detections from merged cascade outputs."""
+        if not boxes:
+            return []
+        boxes = sorted(boxes, key=lambda b: b[2] * b[3], reverse=True)
+        kept = []
+        for box in boxes:
+            x1, y1, w1, h1 = box
+            duplicate = False
+            for kx, ky, kw, kh in kept:
+                ix = max(0, min(x1 + w1, kx + kw) - max(x1, kx))
+                iy = max(0, min(y1 + h1, ky + kh) - max(y1, ky))
+                intersection = ix * iy
+                union = w1 * h1 + kw * kh - intersection
+                if union > 0 and (intersection / union) > iou_threshold:
+                    duplicate = True
+                    break
+                if (w1 * h1 > 0 and (intersection / (w1 * h1)) > 0.60) or (kw * kh > 0 and (intersection / (kw * kh)) > 0.60):
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(box)
+        return kept
+
     def _detect_faces(self, bgr: "np.ndarray") -> Optional[Dict[str, Any]]:
-        """Detects human faces & figures using high-sensitivity multi-scale Haar Cascades."""
+        """Detects human faces & figures using merged multi-cascade NMS without early breaking."""
         if not OPENCV_AVAILABLE:
             return None
 
@@ -247,37 +272,42 @@ class VisionCurator:
         else:
             face_img = bgr
 
+        fh, fw = face_img.shape[:2]
         gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray_clahe = clahe.apply(gray)
 
-        face_list = []
-        detectors = [d for d in (self.face_cascade_alt2, self.face_cascade_default, self.face_cascade_alt) if d is not None]
+        all_raw = []
+        frontal = [d for d in (self.face_cascade_alt2, self.face_cascade_default, self.face_cascade_alt) if d is not None]
 
-        # 1. Frontal face cascades on CLAHE and raw grayscale
-        for det in detectors:
-            faces = det.detectMultiScale(
+        # Stage 1: ALL frontal cascades on CLAHE (do NOT break early, merge all)
+        for det in frontal:
+            dets = det.detectMultiScale(
                 gray_clahe,
                 scaleFactor=1.05,
                 minNeighbors=3,
                 minSize=(20, 20)
             )
-            if len(faces) > 0:
-                face_list.extend(list(faces))
-                break
+            if len(dets) > 0:
+                all_raw.extend(list(dets))
 
-            faces = det.detectMultiScale(
+        # Stage 1b: ALL frontal cascades on raw gray
+        for det in frontal:
+            dets = det.detectMultiScale(
                 gray,
                 scaleFactor=1.08,
                 minNeighbors=3,
                 minSize=(20, 20)
             )
-            if len(faces) > 0:
-                face_list.extend(list(faces))
-                break
+            if len(dets) > 0:
+                all_raw.extend(list(dets))
 
-        # 2. Profile faces (normal and flipped)
+        # Merge and deduplicate overlapping frontal face detections
+        face_list = self._nms_boxes(all_raw, iou_threshold=0.3)
+
+        # Stage 2: Profile faces (normal and flipped) if no frontal faces found
         if len(face_list) == 0 and self.profile_cascade is not None:
+            prof_raw = []
             profiles = self.profile_cascade.detectMultiScale(
                 gray_clahe,
                 scaleFactor=1.08,
@@ -285,38 +315,62 @@ class VisionCurator:
                 minSize=(20, 20)
             )
             if len(profiles) > 0:
-                face_list.extend(list(profiles))
-            else:
-                flipped = cv2.flip(gray_clahe, 1)
-                flipped_profiles = self.profile_cascade.detectMultiScale(
-                    flipped,
-                    scaleFactor=1.08,
-                    minNeighbors=3,
-                    minSize=(20, 20)
-                )
-                if len(flipped_profiles) > 0:
-                    face_list.extend(list(flipped_profiles))
+                prof_raw.extend(list(profiles))
 
-        # 3. Eye pair detection in upper region
+            flipped = cv2.flip(gray_clahe, 1)
+            flipped_profiles = self.profile_cascade.detectMultiScale(
+                flipped,
+                scaleFactor=1.08,
+                minNeighbors=3,
+                minSize=(20, 20)
+            )
+            if len(flipped_profiles) > 0:
+                for (fx, fy, f_w, f_h) in flipped_profiles:
+                    orig_x = fw - (fx + f_w)
+                    prof_raw.append((orig_x, fy, f_w, f_h))
+
+            if prof_raw:
+                face_list = self._nms_boxes(prof_raw, iou_threshold=0.3)
+
+        # Stage 3: Eye pair detection in upper region as last resort
         if len(face_list) == 0 and self.eye_cascade is not None:
-            top_gray = gray_clahe[:int(gray_clahe.shape[0] * 0.65), :]
+            top_gray = gray_clahe[:int(fh * 0.65), :]
             eyes = self.eye_cascade.detectMultiScale(top_gray, scaleFactor=1.10, minNeighbors=4, minSize=(14, 14))
             if len(eyes) >= 2:
-                return {
-                    "category": "portrait",
-                    "curated": True,
-                    "confidence": 0.88,
-                    "face_count": 1,
-                    "nature_score": 0.05,
-                    "subtype": "portrait",
-                    "tags": ["portrait", "Portrait", "1 face"],
-                    "reason": "Detected human facial eye features"
-                }
+                sorted_eyes = sorted(eyes, key=lambda e: e[0])
+                e_left, e_right = sorted_eyes[0], sorted_eyes[-1]
+                eye_center_x = (e_left[0] + e_right[0] + e_right[2]) / 2.0
+                eye_center_y = (e_left[1] + e_right[1] + e_right[3]) / 2.0
+                eye_dist = max((e_right[0] + e_right[2]) - e_left[0], 20)
+                approx_face_w = int(eye_dist * 2.0)
+                approx_face_h = int(approx_face_w * 1.25)
+                approx_x = max(0, int(eye_center_x - approx_face_w / 2.0))
+                approx_y = max(0, int(eye_center_y - approx_face_h * 0.38))
+                approx_x = min(approx_x, fw - 1)
+                approx_y = min(approx_y, fh - 1)
+                approx_w = min(approx_face_w, fw - approx_x)
+                approx_h = min(approx_face_h, fh - approx_y)
+                face_list = [(approx_x, approx_y, approx_w, approx_h)]
 
         if len(face_list) > 0:
+            scale_x = w / float(fw)
+            scale_y = h / float(fh)
+            norm_face_boxes = []
+            for (fx, fy, fw2, fh2) in face_list:
+                orig_x = fx * scale_x
+                orig_y = fy * scale_y
+                orig_w = fw2 * scale_x
+                orig_h = fh2 * scale_y
+                norm_face_boxes.append([
+                    float(round(orig_x / float(w), 4)),
+                    float(round(orig_y / float(h), 4)),
+                    float(round(orig_w / float(w), 4)),
+                    float(round(orig_h / float(h), 4))
+                ])
+
             face_count = len(face_list)
-            total_img_area = face_img.shape[0] * face_img.shape[1]
-            max_face_area = max(fw * fh for (fx, fy, fw, fh) in face_list)
+            total_img_area = fh * fw
+            max_face_area = max(fw2 * fh2 for (fx, fy, fw2, fh2) in face_list)
             face_area_pct = max_face_area / float(total_img_area)
 
             if face_count >= 3:
@@ -336,53 +390,12 @@ class VisionCurator:
                 "curated": True,
                 "confidence": round(confidence, 2),
                 "face_count": face_count,
+                "face_boxes": norm_face_boxes,
                 "nature_score": 0.05,
                 "subtype": subtype,
                 "tags": ["portrait", tag_label, f"{face_count} face{'s' if face_count > 1 else ''}"],
                 "reason": f"Detected {face_count} human face(s)"
             }
-
-        # 4. Upper body / Figure detection
-        if self.upperbody_cascade is not None:
-            bodies = self.upperbody_cascade.detectMultiScale(
-                gray_clahe,
-                scaleFactor=1.08,
-                minNeighbors=3,
-                minSize=(36, 36)
-            )
-            if len(bodies) > 0:
-                body_count = len(bodies)
-                return {
-                    "category": "portrait",
-                    "curated": True,
-                    "confidence": 0.85,
-                    "face_count": body_count,
-                    "nature_score": 0.10,
-                    "subtype": "portrait",
-                    "tags": ["portrait", "Person", f"{body_count} person{'s' if body_count > 1 else ''}"],
-                    "reason": f"Detected {body_count} person / portrait figure(s)"
-                }
-
-        # 5. Full body standing figure detection
-        if self.fullbody_cascade is not None:
-            full_bodies = self.fullbody_cascade.detectMultiScale(
-                gray_clahe,
-                scaleFactor=1.08,
-                minNeighbors=3,
-                minSize=(40, 40)
-            )
-            if len(full_bodies) > 0:
-                body_count = len(full_bodies)
-                return {
-                    "category": "portrait",
-                    "curated": True,
-                    "confidence": 0.82,
-                    "face_count": body_count,
-                    "nature_score": 0.10,
-                    "subtype": "portrait",
-                    "tags": ["portrait", "Person", f"{body_count} person{'s' if body_count > 1 else ''}"],
-                    "reason": f"Detected {body_count} standing / full figure(s)"
-                }
 
         return None
 

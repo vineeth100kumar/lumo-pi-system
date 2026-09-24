@@ -47,7 +47,7 @@ class MemoriesService:
         # AI Vision Curation (Portraits & Nature Only)
         self.curator = VisionCurator()
         self.curate_display = True
-        self.cv_version = 4
+        self.cv_version = 5
 
         self._load_index()
 
@@ -100,19 +100,19 @@ class MemoriesService:
                     saved_cv = data.get("cv_version", 0)
                     saved_cascade_count = data.get("cascade_count", -1)
                     current_cascade_count = self.curator.loaded_cascade_count if self.curator else 0
-                    self.cv_version = 4
+                    self.cv_version = 5
 
                     logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
 
                     # ✨ Run curation scan on library on boot to ensure ALL photos are accurately classified
                     if self.photos:
-                        force_rescan = (saved_cv < 4)
+                        force_rescan = (saved_cv < 5)
                         if not force_rescan and saved_cascade_count != current_cascade_count:
-                            # Cascade availability changed (e.g. 0→7 models now loaded) — re-classify all photos
+                            # Cascade availability changed (e.g. 0→5 models now loaded) — re-classify all photos
                             logger.info(f"  Cascade count changed ({saved_cascade_count}→{current_cascade_count}). Forcing full re-scan.")
                             force_rescan = True
                         logger.info(f"✨ Vision AI active: Scanning and classifying {len(self.photos)} library photos for desk curation (force_rescan={force_rescan})...")
-                        self.scan_and_curate_all(force=force_rescan)
+                        self.scan_and_curate_all(force=force_rescan, regen_binpacks=force_rescan)
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
                 self.photos = []
@@ -165,6 +165,98 @@ class MemoriesService:
             top = (img.height - new_h) // 2
             return img.crop((0, top, img.width, top + new_h))
         return img
+
+    def _smart_crop(self, img: Image.Image, face_boxes: Optional[List[List[float]]] = None) -> Image.Image:
+        """
+        Face-aware crop to 4:3 (320x240) ensuring no heads or faces are cropped off.
+        face_boxes: list of [x_frac, y_frac, w_frac, h_frac] as fractions of image dimensions.
+        Falls back to center crop if no face boxes are available.
+        """
+        if not face_boxes:
+            return self._crop_to_4_3(img)
+
+        W, H = img.width, img.height
+        TARGET_RATIO = 320.0 / 240.0
+
+        # Convert fractional boxes to pixel coordinates
+        px = []
+        for box in face_boxes:
+            if not isinstance(box, (list, tuple)) or len(box) < 4:
+                continue
+            xf, yf, wf, hf = box[:4]
+            x = max(0, min(W - 1, int(xf * W)))
+            y = max(0, min(H - 1, int(yf * H)))
+            w = max(1, min(W - x, int(wf * W)))
+            h = max(1, min(H - y, int(hf * H)))
+            px.append((x, y, w, h))
+
+        if not px:
+            return self._crop_to_4_3(img)
+
+        # Union bounding box of all detected faces
+        min_x = min(b[0] for b in px)
+        min_y = min(b[1] for b in px)
+        max_x = max(b[0] + b[2] for b in px)
+        max_y = max(b[1] + b[3] for b in px)
+        cx = (min_x + max_x) // 2
+        cy = (min_y + max_y) // 2
+
+        face_w = max_x - min_x
+        face_h = max_y - min_y
+
+        # Padding: extra top padding for hair/forehead headroom so heads are never clipped
+        pad_x = max(int(face_w * 0.25), int(W * 0.05), 20)
+        pad_y_top = max(int(face_h * 0.40), int(H * 0.08), 30)
+        pad_y_bottom = max(int(face_h * 0.30), int(H * 0.06), 25)
+
+        roi_min_x = max(0, min_x - pad_x)
+        roi_min_y = max(0, min_y - pad_y_top)
+        roi_max_x = min(W, max_x + pad_x)
+        roi_max_y = min(H, max_y + pad_y_bottom)
+
+        roi_w = roi_max_x - roi_min_x
+        roi_h = roi_max_y - roi_min_y
+
+        # Expand ROI to 4:3 aspect ratio
+        if roi_w / max(roi_h, 1) > TARGET_RATIO:
+            crop_w = roi_w
+            crop_h = int(crop_w / TARGET_RATIO)
+        else:
+            crop_h = roi_h
+            crop_w = int(crop_h * TARGET_RATIO)
+
+        # Minimum crop window size (avoid excessive zoom-in on single small face)
+        crop_w = max(crop_w, int(W * 0.35))
+        crop_h = max(crop_h, int(H * 0.35))
+        if crop_w / max(crop_h, 1) > TARGET_RATIO:
+            crop_h = int(crop_w / TARGET_RATIO)
+        else:
+            crop_w = int(crop_h * TARGET_RATIO)
+
+        # Cap at image dimensions
+        if crop_w > W:
+            crop_w = W
+            crop_h = int(W / TARGET_RATIO)
+        if crop_h > H:
+            crop_h = H
+            crop_w = int(H * TARGET_RATIO)
+
+        crop_w = min(crop_w, W)
+        crop_h = min(crop_h, H)
+
+        # Center around face centroid
+        left = cx - crop_w // 2
+        top = cy - crop_h // 2
+
+        # Ensure top boundary respects headroom above faces
+        headroom_limit = min_y - int(face_h * 0.20)
+        if top > headroom_limit:
+            top = headroom_limit
+
+        left = max(0, min(left, W - crop_w))
+        top = max(0, min(top, H - crop_h))
+
+        return img.crop((left, top, left + crop_w, top + crop_h))
 
     def _render_frame_strips(self, img: Image.Image) -> List[bytes]:
         """Converts a 320x240 RGB image into 12 pre-computed binary strip packets."""
@@ -257,6 +349,7 @@ class MemoriesService:
         try:
             with Image.open(file_path) as img:
                 is_anim = getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1
+                face_boxes = photo.get("face_boxes")
                 if is_anim:
                     num_frames = min(16, img.n_frames)
                     step = img.n_frames / num_frames
@@ -269,11 +362,11 @@ class MemoriesService:
                             f_rgb.paste(rgba, (0, 0), rgba)
                         else:
                             f_rgb.paste(img.convert("RGB"), (0, 0))
-                        f_rgb = self._crop_to_4_3(ImageOps.exif_transpose(f_rgb)).resize((320, 240), Image.Resampling.LANCZOS)
+                        f_rgb = self._smart_crop(ImageOps.exif_transpose(f_rgb), face_boxes=face_boxes).resize((320, 240), Image.Resampling.LANCZOS)
                         all_frames.append(self._render_frame_strips(f_rgb))
                 else:
                     f_rgb = ImageOps.exif_transpose(img.convert("RGB"))
-                    f_rgb = self._crop_to_4_3(f_rgb).resize((320, 240), Image.Resampling.LANCZOS)
+                    f_rgb = self._smart_crop(f_rgb, face_boxes=face_boxes).resize((320, 240), Image.Resampling.LANCZOS)
                     all_frames = [self._render_frame_strips(f_rgb)]
 
                 self._save_binpack(photo_id, all_frames)
@@ -417,6 +510,18 @@ class MemoriesService:
                 step = num_src_frames / target_count
                 sample_indices = [int(i * step) for i in range(target_count)]
 
+                # Extract sample frame 0 first for orientation & classification
+                raw_img.seek(sample_indices[0])
+                f0_rgb = Image.new("RGB", raw_img.size, (0, 0, 0))
+                if raw_img.mode in ("RGBA", "LA") or (raw_img.mode == "P" and "transparency" in raw_img.info):
+                    rgba = raw_img.convert("RGBA")
+                    f0_rgb.paste(rgba, (0, 0), rgba)
+                else:
+                    f0_rgb.paste(raw_img.convert("RGB"), (0, 0))
+                f0_rgb = ImageOps.exif_transpose(f0_rgb)
+                curation_res = self.curator.classify(f0_rgb)
+                face_boxes = curation_res.get("face_boxes", [])
+
                 frames_320 = []
                 for s_idx in sample_indices:
                     raw_img.seek(s_idx)
@@ -428,7 +533,7 @@ class MemoriesService:
                         f_rgb.paste(raw_img.convert("RGB"), (0, 0))
 
                     f_rgb = ImageOps.exif_transpose(f_rgb)
-                    f_rgb = self._crop_to_4_3(f_rgb)
+                    f_rgb = self._smart_crop(f_rgb, face_boxes=face_boxes)
                     f_rgb = f_rgb.resize((320, 240), Image.Resampling.LANCZOS)
                     try:
                         f_rgb = ImageEnhance.Color(f_rgb).enhance(1.10)
@@ -441,7 +546,9 @@ class MemoriesService:
                 thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
             else:
                 img = ImageOps.exif_transpose(raw_img).convert("RGB")
-                img = self._crop_to_4_3(img)
+                curation_res = self.curator.classify(img)
+                face_boxes = curation_res.get("face_boxes", [])
+                img = self._smart_crop(img, face_boxes=face_boxes)
                 display_img = img.resize((320, 240), Image.Resampling.LANCZOS)
                 try:
                     display_img = ImageEnhance.Color(display_img).enhance(1.10)
@@ -455,9 +562,6 @@ class MemoriesService:
                 caption = self._extract_caption_date(raw_img)
             else:
                 caption = str(caption).strip()[:24]
-
-            # Analyze image content with VisionCurator (Portraits & Nature classification)
-            curation_res = self.curator.classify(raw_img if not is_gif else display_img)
 
             # Pre-render binary strips for all frames (12 strips per frame)
             all_frame_strips = [self._render_frame_strips(f) for f in frames_320]
@@ -527,6 +631,7 @@ class MemoriesService:
                     existing["category"] = curation_res.get("category", "nature")
                     existing["curated"] = curation_res.get("curated", True)
                     existing["face_count"] = curation_res.get("face_count", 0)
+                    existing["face_boxes"] = curation_res.get("face_boxes", [])
                     existing["nature_score"] = curation_res.get("nature_score", 0.0)
                     existing["subtype"] = curation_res.get("subtype", "")
                     existing["classification_tags"] = curation_res.get("tags", [])
@@ -584,6 +689,7 @@ class MemoriesService:
                 "category": curation_res.get("category", "nature"),
                 "curated": curation_res.get("curated", True),
                 "face_count": curation_res.get("face_count", 0),
+                "face_boxes": curation_res.get("face_boxes", []),
                 "nature_score": curation_res.get("nature_score", 0.0),
                 "subtype": curation_res.get("subtype", ""),
                 "classification_tags": curation_res.get("tags", []),
@@ -697,7 +803,7 @@ class MemoriesService:
                 return p
         return None
 
-    def scan_and_curate_all(self, force: bool = False, reset_overrides: bool = False) -> Dict[str, Any]:
+    def scan_and_curate_all(self, force: bool = False, reset_overrides: bool = False, regen_binpacks: bool = False) -> Dict[str, Any]:
         """Retroactively analyzes and classifies all photos in library."""
         counts = {"total": len(self.photos), "curated": 0, "portrait": 0, "nature": 0, "other": 0}
         for p in self.photos:
@@ -725,6 +831,7 @@ class MemoriesService:
                         p["category"] = res.get("category", "other")
                         p["curated"] = res.get("curated", False)
                         p["face_count"] = res.get("face_count", 0)
+                        p["face_boxes"] = res.get("face_boxes", [])
                         p["nature_score"] = res.get("nature_score", 0.0)
                         p["subtype"] = res.get("subtype", "")
                         p["classification_tags"] = res.get("tags", [])
@@ -733,9 +840,22 @@ class MemoriesService:
                     logger.warning(f"Failed to classify photo {p.get('id')}: {e}")
                     p["category"] = "other"
                     p["curated"] = False
+                    p["face_boxes"] = []
             else:
                 p["category"] = "other"
                 p["curated"] = False
+                p["face_boxes"] = []
+
+            if regen_binpacks:
+                pid = p.get("id", "")
+                bp = os.path.join(self.library_dir, f"{pid}.binpack")
+                if os.path.exists(bp):
+                    try:
+                        os.remove(bp)
+                    except Exception:
+                        pass
+                if pid in self._gif_cache:
+                    del self._gif_cache[pid]
 
             cat = p.get("category", "other")
             counts[cat] = counts.get(cat, 0) + 1
@@ -764,6 +884,7 @@ class MemoriesService:
                                 p["category"] = res.get("category", "other")
                                 p["curated"] = res.get("curated", False)
                                 p["face_count"] = res.get("face_count", 0)
+                                p["face_boxes"] = res.get("face_boxes", [])
                                 p["nature_score"] = res.get("nature_score", 0.0)
                                 p["subtype"] = res.get("subtype", "")
                                 p["classification_tags"] = res.get("tags", [])

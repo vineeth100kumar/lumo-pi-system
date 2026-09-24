@@ -978,7 +978,7 @@ async def scan_and_curate_library(request: Request):
         pass
     if request.query_params.get("force", "").lower() in ("true", "1"):
         force = True
-    counts = memories.scan_and_curate_all(force=force, reset_overrides=force)
+    counts = memories.scan_and_curate_all(force=force, reset_overrides=force, regen_binpacks=force)
     if current_screen == "MEMORY":
         await show_memory_current()
     return {
