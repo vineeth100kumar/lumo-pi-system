@@ -104,15 +104,10 @@ class MemoriesService:
 
                     logger.info(f"Loaded {len(self.photos)} memories from index (Quota: {self.max_photos} max FIFO rolling buffer, Curate: {self.curate_display}).")
 
-                    # ✨ Run curation scan on library on boot to ensure ALL photos are accurately classified
+                    # ✨ Auto-curate and smart-crop all library photos from scratch every time code runs
                     if self.photos:
-                        force_rescan = (saved_cv < 5)
-                        if not force_rescan and saved_cascade_count != current_cascade_count:
-                            # Cascade availability changed (e.g. 0→5 models now loaded) — re-classify all photos
-                            logger.info(f"  Cascade count changed ({saved_cascade_count}→{current_cascade_count}). Forcing full re-scan.")
-                            force_rescan = True
-                        logger.info(f"✨ Vision AI active: Scanning and classifying {len(self.photos)} library photos for desk curation (force_rescan={force_rescan})...")
-                        self.scan_and_curate_all(force=force_rescan, regen_binpacks=force_rescan)
+                        logger.info(f"✨ Vision AI active: Automatically curating and smart-cropping all {len(self.photos)} library photos from scratch (resetting previous curation)...")
+                        self.scan_and_curate_all(force=True, reset_overrides=True, regen_binpacks=True)
             except Exception as e:
                 logger.warning(f"Could not load memories index: {e}")
                 self.photos = []
@@ -138,19 +133,15 @@ class MemoriesService:
             logger.error(f"Failed to save memories index: {e}")
 
     def set_gif_loops(self, loops: int):
-        self.gif_loops = max(1, loops)
+        self.gif_loops = 1
         self._save_index()
 
     def is_gif_streaming(self) -> bool:
-        return self.active_gif_task is not None and not self.active_gif_task.done()
+        return False
 
     def stop_gif_playback(self):
-        """Immediately signals any active GIF streaming task to stop."""
-        self.gif_cancel_event.set()
-        if self.active_gif_task and not self.active_gif_task.done():
-            self.active_gif_task.cancel()
-        self.active_gif_task = None
-        self.gif_cancel_event = asyncio.Event()
+        """No-op: GIF playback disabled, all memories are static images."""
+        pass
 
     def _crop_to_4_3(self, img: Image.Image) -> Image.Image:
         """Center-crops image to 4:3 (320:240) aspect ratio."""
@@ -315,24 +306,22 @@ class MemoriesService:
                 strip_size = 12808
                 strips_per_frame = 12
                 frame_size = strip_size * strips_per_frame
-                num_frames = len(data) // frame_size
-                all_frames = []
-                for f_idx in range(num_frames):
-                    frame_data = data[f_idx * frame_size : (f_idx + 1) * frame_size]
+                if len(data) >= frame_size:
+                    frame_data = data[:frame_size]
                     frame_strips = [
                         frame_data[s_idx * strip_size : (s_idx + 1) * strip_size]
                         for s_idx in range(strips_per_frame)
                     ]
-                    all_frames.append(frame_strips)
-                self._gif_cache[photo_id] = all_frames
-                return all_frames
+                    all_frames = [frame_strips]
+                    self._gif_cache[photo_id] = all_frames
+                    return all_frames
             except Exception as e:
                 logger.warning(f"Failed to read binpack for {photo_id}: {e}")
 
         return None
 
     def _get_or_load_strips(self, photo: dict) -> Optional[List[List[bytes]]]:
-        """Returns pre-rendered binary strips for a photo/gif, generating on-demand if missing."""
+        """Returns pre-rendered binary strips for a photo, generating on-demand if missing."""
         photo_id = photo.get("id", "")
         cached = self._load_gif_strips(photo_id)
         if cached:
@@ -344,30 +333,21 @@ class MemoriesService:
         if not os.path.exists(file_path):
             file_path = os.path.join(self.thumbs_dir, photo.get("thumb", ""))
             if not os.path.exists(file_path):
-                return None
+                file_path = os.path.join(self.library_dir, f"{photo_id}.jpg")
+                if not os.path.exists(file_path):
+                    return None
 
         try:
             with Image.open(file_path) as img:
-                is_anim = getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1
+                if getattr(img, "is_animated", False):
+                    try:
+                        img.seek(0)
+                    except Exception:
+                        pass
                 face_boxes = photo.get("face_boxes")
-                if is_anim:
-                    num_frames = min(16, img.n_frames)
-                    step = img.n_frames / num_frames
-                    all_frames = []
-                    for i in range(num_frames):
-                        img.seek(int(i * step))
-                        f_rgb = Image.new("RGB", img.size, (0, 0, 0))
-                        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
-                            rgba = img.convert("RGBA")
-                            f_rgb.paste(rgba, (0, 0), rgba)
-                        else:
-                            f_rgb.paste(img.convert("RGB"), (0, 0))
-                        f_rgb = self._smart_crop(ImageOps.exif_transpose(f_rgb), face_boxes=face_boxes).resize((320, 240), Image.Resampling.LANCZOS)
-                        all_frames.append(self._render_frame_strips(f_rgb))
-                else:
-                    f_rgb = ImageOps.exif_transpose(img.convert("RGB"))
-                    f_rgb = self._smart_crop(f_rgb, face_boxes=face_boxes).resize((320, 240), Image.Resampling.LANCZOS)
-                    all_frames = [self._render_frame_strips(f_rgb)]
+                f_rgb = ImageOps.exif_transpose(img.convert("RGB"))
+                f_rgb = self._smart_crop(f_rgb, face_boxes=face_boxes).resize((320, 240), Image.Resampling.LANCZOS)
+                all_frames = [self._render_frame_strips(f_rgb)]
 
                 self._save_binpack(photo_id, all_frames)
                 self._gif_cache[photo_id] = all_frames
@@ -502,69 +482,40 @@ class MemoriesService:
 
         try:
             raw_img = Image.open(io.BytesIO(raw))
-            is_gif = getattr(raw_img, "is_animated", False) and getattr(raw_img, "n_frames", 1) > 1
-
-            if is_gif:
-                num_src_frames = raw_img.n_frames
-                target_count = min(16, num_src_frames)
-                step = num_src_frames / target_count
-                sample_indices = [int(i * step) for i in range(target_count)]
-
-                # Extract sample frame 0 first for orientation & classification
-                raw_img.seek(sample_indices[0])
-                f0_rgb = Image.new("RGB", raw_img.size, (0, 0, 0))
-                if raw_img.mode in ("RGBA", "LA") or (raw_img.mode == "P" and "transparency" in raw_img.info):
-                    rgba = raw_img.convert("RGBA")
-                    f0_rgb.paste(rgba, (0, 0), rgba)
-                else:
-                    f0_rgb.paste(raw_img.convert("RGB"), (0, 0))
-                f0_rgb = ImageOps.exif_transpose(f0_rgb)
-                curation_res = self.curator.classify(f0_rgb)
-                face_boxes = curation_res.get("face_boxes", [])
-
-                frames_320 = []
-                for s_idx in sample_indices:
-                    raw_img.seek(s_idx)
-                    f_rgb = Image.new("RGB", raw_img.size, (0, 0, 0))
-                    if raw_img.mode in ("RGBA", "LA") or (raw_img.mode == "P" and "transparency" in raw_img.info):
-                        rgba = raw_img.convert("RGBA")
-                        f_rgb.paste(rgba, (0, 0), rgba)
-                    else:
-                        f_rgb.paste(raw_img.convert("RGB"), (0, 0))
-
-                    f_rgb = ImageOps.exif_transpose(f_rgb)
-                    f_rgb = self._smart_crop(f_rgb, face_boxes=face_boxes)
-                    f_rgb = f_rgb.resize((320, 240), Image.Resampling.LANCZOS)
-                    try:
-                        f_rgb = ImageEnhance.Color(f_rgb).enhance(1.10)
-                        f_rgb = ImageEnhance.Contrast(f_rgb).enhance(1.05)
-                    except Exception:
-                        pass
-                    frames_320.append(f_rgb)
-
-                display_img = frames_320[0]
-                thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
-            else:
-                img = ImageOps.exif_transpose(raw_img).convert("RGB")
-                curation_res = self.curator.classify(img)
-                face_boxes = curation_res.get("face_boxes", [])
-                img = self._smart_crop(img, face_boxes=face_boxes)
-                display_img = img.resize((320, 240), Image.Resampling.LANCZOS)
+            # If animated GIF / multi-frame image, seek to frame 0 to extract static photo
+            if getattr(raw_img, "is_animated", False):
                 try:
-                    display_img = ImageEnhance.Color(display_img).enhance(1.10)
-                    display_img = ImageEnhance.Contrast(display_img).enhance(1.05)
+                    raw_img.seek(0)
                 except Exception:
                     pass
-                thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
-                frames_320 = [display_img]
+
+            if raw_img.mode in ("RGBA", "LA") or (raw_img.mode == "P" and "transparency" in raw_img.info):
+                rgba = raw_img.convert("RGBA")
+                base_img = Image.new("RGB", raw_img.size, (0, 0, 0))
+                base_img.paste(rgba, (0, 0), rgba)
+            else:
+                base_img = raw_img.convert("RGB")
+
+            img = ImageOps.exif_transpose(base_img)
+            curation_res = self.curator.classify(img)
+            face_boxes = curation_res.get("face_boxes", [])
+            img = self._smart_crop(img, face_boxes=face_boxes)
+            display_img = img.resize((320, 240), Image.Resampling.LANCZOS)
+            try:
+                display_img = ImageEnhance.Color(display_img).enhance(1.10)
+                display_img = ImageEnhance.Contrast(display_img).enhance(1.05)
+            except Exception:
+                pass
+            thumb_img = display_img.resize((160, 120), Image.Resampling.LANCZOS)
+            frames_320 = [display_img]
 
             if not caption or not caption.strip():
                 caption = self._extract_caption_date(raw_img)
             else:
                 caption = str(caption).strip()[:24]
 
-            # Pre-render binary strips for all frames (12 strips per frame)
-            all_frame_strips = [self._render_frame_strips(f) for f in frames_320]
+            # Pre-render binary strips for the static frame (12 strips)
+            all_frame_strips = [self._render_frame_strips(display_img)]
 
             # Fingerprints for deduplication
             raw_hash = hashlib.md5(raw).hexdigest()
@@ -590,25 +541,13 @@ class MemoriesService:
                 existing = self.photos.pop(existing_match_idx)
                 photo_id = existing["id"]
 
-                # Remove old files (could be converting jpg <-> gif)
+                # Remove old files (could be converting legacy .gif -> .jpg)
                 self._delete_disk_files(existing)
 
-                ext = ".gif" if is_gif else ".jpg"
-                lib_file = f"{photo_id}{ext}"
+                lib_file = f"{photo_id}.jpg"
                 thumb_file = f"{photo_id}.jpg"
 
-                if is_gif:
-                    frames_320[0].save(
-                        os.path.join(self.library_dir, lib_file),
-                        save_all=True,
-                        append_images=frames_320[1:],
-                        loop=0,
-                        duration=160,
-                        optimize=True
-                    )
-                else:
-                    display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
-
+                display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
                 thumb_img.save(os.path.join(self.thumbs_dir, thumb_file), "JPEG", quality=85)
                 self._save_binpack(photo_id, all_frame_strips)
                 self._gif_cache[photo_id] = all_frame_strips
@@ -617,8 +556,8 @@ class MemoriesService:
                     existing["caption"] = caption
                 existing["filename"] = lib_file
                 existing["thumb"] = thumb_file
-                existing["is_gif"] = is_gif
-                existing["frame_count"] = len(frames_320)
+                existing["is_gif"] = False
+                existing["frame_count"] = 1
                 existing["added_at"] = datetime.now().isoformat()
                 existing["source"] = source
                 existing["raw_hash"] = raw_hash
@@ -626,20 +565,20 @@ class MemoriesService:
                 existing["dhash"] = curr_dhash
                 existing["is_replaced"] = True
 
-                # Update classification if not manually overridden
-                if existing.get("curated_override") is None:
-                    existing["category"] = curation_res.get("category", "nature")
-                    existing["curated"] = curation_res.get("curated", True)
-                    existing["face_count"] = curation_res.get("face_count", 0)
-                    existing["face_boxes"] = curation_res.get("face_boxes", [])
-                    existing["nature_score"] = curation_res.get("nature_score", 0.0)
-                    existing["subtype"] = curation_res.get("subtype", "")
-                    existing["classification_tags"] = curation_res.get("tags", [])
-                    existing["classification_reason"] = curation_res.get("reason", "")
+                # Update classification
+                existing["category"] = curation_res.get("category", "nature")
+                existing["curated"] = curation_res.get("curated", True)
+                existing["face_count"] = curation_res.get("face_count", 0)
+                existing["face_boxes"] = curation_res.get("face_boxes", [])
+                existing["nature_score"] = curation_res.get("nature_score", 0.0)
+                existing["subtype"] = curation_res.get("subtype", "")
+                existing["classification_tags"] = curation_res.get("tags", [])
+                existing["classification_reason"] = curation_res.get("reason", "")
+                existing["curated_override"] = None
 
                 self.photos.insert(0, existing)
                 self._save_index()
-                logger.info(f"Duplicate photo detected: replaced existing memory '{photo_id}' ({existing.get('caption')}, is_gif={is_gif}, category={existing.get('category')}) without duplicating.")
+                logger.info(f"Duplicate photo detected: replaced existing memory '{photo_id}' ({existing.get('caption')}, category={existing.get('category')}) without duplicating.")
 
                 if notify and hub and hub.connected:
                     await hub.send_json({
@@ -653,22 +592,10 @@ class MemoriesService:
 
             # BRAND NEW MEMORY
             photo_id = f"mem_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-            ext = ".gif" if is_gif else ".jpg"
-            lib_file = f"{photo_id}{ext}"
+            lib_file = f"{photo_id}.jpg"
             thumb_file = f"{photo_id}.jpg"
 
-            if is_gif:
-                frames_320[0].save(
-                    os.path.join(self.library_dir, lib_file),
-                    save_all=True,
-                    append_images=frames_320[1:],
-                    loop=0,
-                    duration=160,
-                    optimize=True
-                )
-            else:
-                display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
-
+            display_img.save(os.path.join(self.library_dir, lib_file), "JPEG", quality=92)
             thumb_img.save(os.path.join(self.thumbs_dir, thumb_file), "JPEG", quality=85)
             self._save_binpack(photo_id, all_frame_strips)
             self._gif_cache[photo_id] = all_frame_strips
@@ -683,8 +610,8 @@ class MemoriesService:
                 "raw_hash": raw_hash,
                 "pixel_hash": pixel_hash,
                 "dhash": curr_dhash,
-                "is_gif": is_gif,
-                "frame_count": len(frames_320),
+                "is_gif": False,
+                "frame_count": 1,
                 "is_replaced": False,
                 "category": curation_res.get("category", "nature"),
                 "curated": curation_res.get("curated", True),
@@ -704,7 +631,7 @@ class MemoriesService:
                 self._delete_disk_files(old)
 
             self._save_index()
-            logger.info(f"Successfully ingested memory '{photo_id}' ({caption}, is_gif={is_gif}, category={item['category']}) from {source}")
+            logger.info(f"Successfully ingested memory '{photo_id}' ({caption}, category={item['category']}) from {source}")
 
             if notify and hub and hub.connected:
                 await hub.send_json({
@@ -804,7 +731,7 @@ class MemoriesService:
         return None
 
     def scan_and_curate_all(self, force: bool = False, reset_overrides: bool = False, regen_binpacks: bool = False) -> Dict[str, Any]:
-        """Retroactively analyzes and classifies all photos in library."""
+        """Retroactively analyzes, smart-crops, and classifies all photos in library from scratch."""
         counts = {"total": len(self.photos), "curated": 0, "portrait": 0, "nature": 0, "other": 0}
         for p in self.photos:
             if reset_overrides:
@@ -820,42 +747,77 @@ class MemoriesService:
                     counts["curated"] += 1
                 continue
 
-            lib_p = os.path.join(self.library_dir, p.get("filename", ""))
-            thumb_p = os.path.join(self.thumbs_dir, p.get("thumb", ""))
+            pid = p.get("id", "")
+            orig_filename = p.get("filename", "")
+            lib_p = os.path.join(self.library_dir, orig_filename)
+            thumb_p = os.path.join(self.thumbs_dir, p.get("thumb", f"{pid}.jpg"))
+
+            # If it's a GIF or only a GIF exists on disk, locate source
             target_path = lib_p if os.path.exists(lib_p) else thumb_p
+            if not os.path.exists(target_path):
+                gif_candidate = os.path.join(self.library_dir, f"{pid}.gif")
+                if os.path.exists(gif_candidate):
+                    target_path = gif_candidate
 
             if os.path.exists(target_path):
                 try:
                     with Image.open(target_path) as img:
-                        res = self.curator.classify(img)
+                        if getattr(img, "is_animated", False):
+                            try:
+                                img.seek(0)
+                            except Exception:
+                                pass
+                        f_rgb = ImageOps.exif_transpose(img.convert("RGB"))
+                        res = self.curator.classify(f_rgb)
+                        face_boxes = res.get("face_boxes", [])
+
+                        # Apply face-safe smart crop to 320x240
+                        f_cropped = self._smart_crop(f_rgb, face_boxes=face_boxes).resize((320, 240), Image.Resampling.LANCZOS)
+                        jpg_file = f"{pid}.jpg"
+                        jpg_path = os.path.join(self.library_dir, jpg_file)
+                        f_cropped.save(jpg_path, "JPEG", quality=92)
+
+                        # Update thumbnail
+                        new_thumb_path = os.path.join(self.thumbs_dir, jpg_file)
+                        f_cropped.resize((160, 120), Image.Resampling.LANCZOS).save(new_thumb_path, "JPEG", quality=85)
+
+                        # Clean up old .gif file if different from jpg_path
+                        if target_path.lower().endswith(".gif") and os.path.exists(target_path):
+                            try:
+                                os.remove(target_path)
+                            except Exception:
+                                pass
+
+                        # Pre-render single-frame static binary strips
+                        all_strips = [self._render_frame_strips(f_cropped)]
+                        self._save_binpack(pid, all_strips)
+                        self._gif_cache[pid] = all_strips
+
+                        p["filename"] = jpg_file
+                        p["thumb"] = jpg_file
+                        p["is_gif"] = False
+                        p["frame_count"] = 1
                         p["category"] = res.get("category", "other")
                         p["curated"] = res.get("curated", False)
                         p["face_count"] = res.get("face_count", 0)
-                        p["face_boxes"] = res.get("face_boxes", [])
+                        p["face_boxes"] = face_boxes
                         p["nature_score"] = res.get("nature_score", 0.0)
                         p["subtype"] = res.get("subtype", "")
                         p["classification_tags"] = res.get("tags", [])
                         p["classification_reason"] = res.get("reason", "")
+                        if reset_overrides:
+                            p["curated_override"] = None
                 except Exception as e:
-                    logger.warning(f"Failed to classify photo {p.get('id')}: {e}")
+                    logger.warning(f"Failed to classify photo {pid}: {e}")
                     p["category"] = "other"
                     p["curated"] = False
                     p["face_boxes"] = []
+                    p["is_gif"] = False
             else:
                 p["category"] = "other"
                 p["curated"] = False
                 p["face_boxes"] = []
-
-            if regen_binpacks:
-                pid = p.get("id", "")
-                bp = os.path.join(self.library_dir, f"{pid}.binpack")
-                if os.path.exists(bp):
-                    try:
-                        os.remove(bp)
-                    except Exception:
-                        pass
-                if pid in self._gif_cache:
-                    del self._gif_cache[pid]
+                p["is_gif"] = False
 
             cat = p.get("category", "other")
             counts[cat] = counts.get(cat, 0) + 1
@@ -924,13 +886,10 @@ class MemoriesService:
         }
 
     async def push_current(self, hub, on_advance=None) -> bool:
-        """Streams current memory (static frame or GIF animation loop) to ESP32."""
+        """Streams current memory (static 320x240 frame) to ESP32."""
         photo = self.get_current()
         if not photo or not hub or not hub.connected:
             return False
-
-        # Stop any running animation loop first
-        self.stop_gif_playback()
 
         all_frames = self._get_or_load_strips(photo)
         if not all_frames:
@@ -946,54 +905,12 @@ class MemoriesService:
         })
         await asyncio.sleep(0.02)
 
-        is_gif = bool(photo.get("is_gif")) and len(all_frames) > 1
-
-        if is_gif:
-            self.active_gif_task = asyncio.create_task(
-                self._stream_gif_loop(photo, all_frames, hub, on_advance=on_advance)
-            )
-            return True
-        else:
-            # Single static frame
-            for strip in all_frames[0]:
-                await hub.send_binary(strip)
-                await asyncio.sleep(0.015)
-            logger.info(f"Streamed static memory '{photo.get('id')}' to ESP32 ({caption})")
-            return True
-
-    async def _stream_gif_loop(self, photo: dict, all_frames: List[List[bytes]], hub, on_advance=None):
-        photo_id = photo.get("id", "")
-        loops_to_play = photo.get("gif_loops", self.gif_loops)
-        if loops_to_play <= 0:
-            loops_to_play = 999999
-
-        logger.info(f"Starting GIF streaming for '{photo_id}' ({len(all_frames)} frames, {loops_to_play} loops)")
-        try:
-            for loop_num in range(loops_to_play):
-                if self.gif_cancel_event.is_set():
-                    break
-
-                for frame_strips in all_frames:
-                    if self.gif_cancel_event.is_set():
-                        break
-
-                    for strip in frame_strips:
-                        if self.gif_cancel_event.is_set():
-                            break
-                        await hub.send_binary(strip)
-                        await asyncio.sleep(0.012)
-
-                    await asyncio.sleep(0.04)
-
-            logger.info(f"GIF playback finished for '{photo_id}' ({loops_to_play} loops completed)")
-
-            if not self.gif_cancel_event.is_set() and on_advance:
-                await on_advance()
-
-        except asyncio.CancelledError:
-            logger.debug(f"GIF streaming cancelled for '{photo_id}'")
-        except Exception as e:
-            logger.error(f"Error during GIF streaming for '{photo_id}': {e}")
+        # Send 12 binary strips of the static image
+        for strip in all_frames[0]:
+            await hub.send_binary(strip)
+            await asyncio.sleep(0.015)
+        logger.info(f"Streamed static memory '{photo.get('id')}' to ESP32 ({caption})")
+        return True
 
     async def next_photo(self, hub=None, on_advance=None) -> Optional[Dict[str, Any]]:
         displayable = self.get_displayable_photos()
