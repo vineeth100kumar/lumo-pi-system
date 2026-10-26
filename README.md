@@ -1,5 +1,7 @@
 # LUMO: Raspberry Pi 5 Controlled Smart Companion System
 
+> LUMO now lives in [TASK_MANAGER](https://github.com/vineeth100kumar/TASK_MANAGER) under `lumo/`. See [CODEMAP.md](CODEMAP.md) for where things are.
+
 A distributed IoT smart desk clock and companion system featuring:
 - **Raspberry Pi 5 ("The Brain")**: Handles Spotify API, Open-Meteo weather, multi-alarm scheduling, task syncing, circadian emotion logic, and serves a modern glassmorphic web dashboard.
 - **ESP32-C3 ("The Display Node")**: Operates as a zero-lag, dedicated peripheral and display driver pushing pixels over 40 MHz SPI to a 2.8" ILI9341 display with dirty-rectangle redraws, WS2812B NeoPixel lighting, and an active-low haptic buzzer.
